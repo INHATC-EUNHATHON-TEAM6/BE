@@ -22,12 +22,12 @@ public class SignupService {
     public User signup(SignupRequestDto requestDto) {
         // 1. 중복 로그인ID 체크
         if (userRepository.existsByLoginId(requestDto.getLoginId())) {
-            throw new IllegalArgumentException("Login ID already exists.");
+            throw new IllegalArgumentException("이미 사용 중인 로그인 ID입니다.");
         }
 
         // 2. 중복 닉네임 체크
         if (userRepository.existsByNickname(requestDto.getNickname())) {
-            throw new IllegalArgumentException("Nickname already exists.");
+            throw new IllegalArgumentException("이미 사용 중인 닉네임입니다.");
         }
 
         // 3. 비밀번호 암호화
