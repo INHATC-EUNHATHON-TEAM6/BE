@@ -1,5 +1,6 @@
 package com.hdd.dto;
 
+import com.hdd.entity.User;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
@@ -9,6 +10,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+
+import java.time.LocalDate;
 
 @Getter
 @Setter
@@ -39,6 +42,15 @@ public class SingupRequestDto {
     @NotBlank(message = "생년월일은 필수 입력 값입니다.")
     @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$",
             message = "생년월일은 YYYY-MM-DD 형식이어야 합니다.")
+    private LocalDate birthDate;
 
-    private String birthDate;
+    public User toEntity() {
+        return User.builder()
+                .loginId(this.loginId)
+                .password(this.password)
+                .nickname(this.nickname)
+                .birthDate(this.birthDate)
+                .status("ACTIVE")
+                .build();
+    }
 }
