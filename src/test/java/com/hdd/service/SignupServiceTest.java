@@ -1,4 +1,4 @@
-package com.hdd;
+package com.hdd.service;
 
 import com.hdd.entity.User;
 import org.junit.jupiter.api.Test;
@@ -12,7 +12,6 @@ import static org.mockito.Mockito.*;
 
 import com.hdd.dto.SignupRequestDto;
 import com.hdd.repository.UserRepository;
-import com.hdd.service.SignupService;
 
 import java.time.LocalDate;
 import java.util.Optional;
