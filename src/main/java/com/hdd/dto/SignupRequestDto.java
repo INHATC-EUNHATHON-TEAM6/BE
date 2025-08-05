@@ -36,8 +36,6 @@ public class SignupRequestDto {
     private String nickname;
 
     @NotNull(message = "생년월일은 필수 입력 값입니다.")
-    @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}$",
-            message = "생년월일은 YYYY-MM-DD 형식이어야 합니다.")
     private LocalDate birthDate;
 
     public User toEntity() {
