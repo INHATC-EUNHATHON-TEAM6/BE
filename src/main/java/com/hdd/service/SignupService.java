@@ -22,7 +22,7 @@ public class SignupService {
     public User signup(SignupRequestDto requestDto) {
         // 1. 중복 로그인ID 체크
         if (userRepository.existsByLoginId(requestDto.getLoginId())) {
-            throw new IllegalArgumentException("이미 사용 중인 로그인 ID입니다.");
+            throw new IllegalArgumentException("이미 사용 중인 아이디 입니다.");
         }
 
         // 2. 중복 닉네임 체크
