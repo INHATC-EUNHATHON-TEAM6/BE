@@ -15,6 +15,7 @@ import com.hdd.repository.UserRepository;
 import com.hdd.service.SignupService;
 
 import java.time.LocalDate;
+import java.util.Optional;
 
 
 @ExtendWith(MockitoExtension.class)
@@ -58,5 +59,28 @@ class SignupServiceTest {
 
         // then
         verify(userRepository, times(1)).save(any(User.class));
+    }
+
+    @Test
+    void 회원가입_중복이메일_예외발생() {
+        // given
+        SignupRequestDto dto = new SignupRequestDto();
+        dto.setLoginId("test@naver.com");
+        dto.setPassword("password123!");
+        dto.setPasswordCheck("password123!");
+        dto.setName("권지은");
+        dto.setNickname("징징");
+        dto.setBirthDate(LocalDate.of(1999, 12, 3));
+
+        // 이미 존재하는 사용자로 가정
+        when(userRepository.findByLoginId(dto.getLoginId()))
+                .thenReturn(Optional.of(new User()));
+
+        // when & then
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
+            signupService.signup(dto);
+        });
+
+        assertEquals("이미 사용 중인 아이디 입니다.", exception.getMessage());
     }
 }
