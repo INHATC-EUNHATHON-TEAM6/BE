@@ -42,6 +42,7 @@ public class SignupRequestDto {
         return User.builder()
                 .loginId(this.loginId)
                 .password(this.password)
+                .name(this.name)
                 .nickname(this.nickname)
                 .birthDate(this.birthDate)
                 .status("ACTIVE")
