@@ -20,6 +20,7 @@ public class SignupService {
 
     @Transactional
     public User signup(SignupRequestDto requestDto) {
+
         // 1. 중복 로그인ID 체크
         if (userRepository.existsByLoginId(requestDto.getLoginId())) {
             throw new IllegalArgumentException("이미 사용 중인 아이디 입니다.");
@@ -30,14 +31,19 @@ public class SignupService {
             throw new IllegalArgumentException("이미 사용 중인 닉네임입니다.");
         }
 
-        // 3. 비밀번호 암호화
+        // 3. password - passwordCheck 일치 여부 확인
+        if (!requestDto.getPassword().equals(requestDto.getPasswordCheck())) {
+            throw new IllegalArgumentException("비밀번호와 비밀번호 확인이 일치하지 않습니다.");
+        }
+
+        // 4. 비밀번호 암호화
         String encodedPassword = passwordEncoder.encode(requestDto.getPassword());
 
-        // 4. DTO → Entity 변환 및 비밀번호 암호화 반영
+        // 5. DTO → Entity 변환 및 비밀번호 암호화 반영
         User user = requestDto.toEntity();
         user.setPassword(encodedPassword);
 
-        // 5. DB 저장
+        // 6. DB 저장
         return userRepository.save(user);
     }
 }
