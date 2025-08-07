@@ -12,6 +12,12 @@ public class Passage {
     @Column(name = "passage_id")
     private Long passageId;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    private Category category;
+
     @Column(columnDefinition = "Text", nullable = false)
     private String content;
+
+
 }
