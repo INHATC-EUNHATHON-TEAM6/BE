@@ -19,5 +19,7 @@ public class Passage {
     @Column(columnDefinition = "Text", nullable = false)
     private String content;
 
+    @Column(nullable = false)
+    private String sourceType;
 
 }
