@@ -1,10 +1,12 @@
-package com.hdd.integration;
-import com.hdd.repository.UserRepository;
+package com.words_hanjoom.integration;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hdd.dto.SignupRequestDto;
-import com.hdd.entity.User;
+
+import com.words_hanjoom.domain.users.dto.SignupRequestDto;
+import com.words_hanjoom.domain.users.entity.User;
+import com.words_hanjoom.domain.users.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

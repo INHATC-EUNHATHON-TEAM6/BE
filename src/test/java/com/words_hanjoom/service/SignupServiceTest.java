@@ -1,6 +1,9 @@
-package com.hdd.service;
+package com.words_hanjoom.service;
 
-import com.hdd.entity.User;
+import com.words_hanjoom.domain.users.dto.SignupRequestDto;
+import com.words_hanjoom.domain.users.entity.User;
+import com.words_hanjoom.domain.users.repository.UserRepository;
+import com.words_hanjoom.domain.users.service.SignupService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -10,8 +13,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import com.hdd.dto.SignupRequestDto;
-import com.hdd.repository.UserRepository;
 
 import java.time.LocalDate;
 import java.util.Optional;

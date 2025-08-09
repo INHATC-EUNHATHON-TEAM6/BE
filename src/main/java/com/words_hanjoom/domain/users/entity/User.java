@@ -1,4 +1,4 @@
-package com.hdd.entity;
+package com.words_hanjoom.domain.users.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
@@ -20,7 +20,7 @@ public class User {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "login_id", length = 30, nullable = false, unique = true)
+    @Column(length = 255, nullable = false, unique = true) // ✅ 로그인 아이디(이메일) 컬럼
     private String loginId;
 
     @Column(length = 255, nullable = false)

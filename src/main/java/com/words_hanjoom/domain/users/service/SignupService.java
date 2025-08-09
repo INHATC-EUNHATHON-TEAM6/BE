@@ -1,8 +1,9 @@
-package com.hdd.service;
+package com.words_hanjoom.domain.users.service;
 
-import com.hdd.dto.SignupRequestDto;
-import com.hdd.entity.User;
-import com.hdd.repository.UserRepository;
+
+import com.words_hanjoom.domain.users.dto.SignupRequestDto;
+import com.words_hanjoom.domain.users.entity.User;
+import com.words_hanjoom.domain.users.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

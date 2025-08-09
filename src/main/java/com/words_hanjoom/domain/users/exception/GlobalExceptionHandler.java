@@ -1,4 +1,4 @@
-package com.hdd.exception;
+package com.words_hanjoom.domain.users.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

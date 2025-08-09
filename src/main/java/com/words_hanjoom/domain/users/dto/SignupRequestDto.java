@@ -1,6 +1,6 @@
-package com.hdd.dto;
-
-import com.hdd.entity.User;
+package com.words_hanjoom.domain.users.dto;
+import com.words_hanjoom.domain.users.entity.User;
+import jakarta.persistence.Id;
 import jakarta.validation.constraints.*;
 import lombok.Getter;
 import lombok.Setter;

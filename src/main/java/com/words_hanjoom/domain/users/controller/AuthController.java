@@ -1,7 +1,7 @@
-package com.hdd.controller;
+package com.words_hanjoom.domain.users.controller;
 
-import com.hdd.dto.SignupRequestDto;
-import com.hdd.service.SignupService;
+import com.words_hanjoom.domain.users.dto.SignupRequestDto;
+import com.words_hanjoom.domain.users.service.SignupService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
