@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 import java.time.LocalDate;
+import java.util.List;
 
 @Getter
 @Setter
@@ -40,6 +41,12 @@ public class SignupRequestDto {
     @NotBlank
     @Size(max = 30)
     private String careerGoal;
+
+    // 선택한 카테고리 ID 목록
+    @NotNull(message = "카테고리는 최소 1개 이상 선택해야 합니다.")
+    @Size(min = 1, message = "카테고리는 최소 1개 이상 선택해야 합니다.")
+    private List<Long> categoryIds;
+
 
     public User toEntity() {
         return User.builder()
