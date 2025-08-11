@@ -54,6 +54,7 @@ public class User {
 
     // 연관관계(읽기 전용 컬렉션)
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
     private Set<UserCategory> userCategories = new HashSet<>();
 
     @PrePersist
