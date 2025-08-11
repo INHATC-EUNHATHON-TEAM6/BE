@@ -14,7 +14,7 @@ import lombok.*;
 public class Wordbook {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "wordbook_id")
-    private Long id;
+    private Long wordbookId;
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
