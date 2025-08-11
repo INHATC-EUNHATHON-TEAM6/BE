@@ -5,6 +5,8 @@ import lombok.*;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "users")
@@ -50,8 +52,16 @@ public class User {
     @Column(length = 20, nullable = false)
     private String status = "ACTIVE"; // 기본값 설정
 
+    // 연관관계(읽기 전용 컬렉션)
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<UserCategory> userCategories = new HashSet<>();
+
     @PrePersist
-    protected void onCreate() {
-        this.createdAt = LocalDateTime.now();
+    protected void onCreate() { this.createdAt = LocalDateTime.now(); }
+
+    // 편의 메서드
+    public void addCategory(Category category) {
+        UserCategory uc = UserCategory.of(this, category);
+        this.userCategories.add(uc);
     }
 }
