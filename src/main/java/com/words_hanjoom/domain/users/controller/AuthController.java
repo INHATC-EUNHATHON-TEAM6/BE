@@ -1,6 +1,6 @@
 package com.words_hanjoom.domain.users.controller;
 
-import com.words_hanjoom.domain.users.dto.SignupRequestDto;
+import com.words_hanjoom.domain.users.dto.request.SignupRequestDto;
 import com.words_hanjoom.domain.users.service.SignupService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

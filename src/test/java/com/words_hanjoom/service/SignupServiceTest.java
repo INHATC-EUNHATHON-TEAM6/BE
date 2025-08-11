@@ -1,6 +1,6 @@
 package com.words_hanjoom.service;
 
-import com.words_hanjoom.domain.users.dto.SignupRequestDto;
+import com.words_hanjoom.domain.users.dto.request.SignupRequestDto;
 import com.words_hanjoom.domain.users.entity.User;
 import com.words_hanjoom.domain.users.repository.UserRepository;
 import com.words_hanjoom.domain.users.service.SignupService;
