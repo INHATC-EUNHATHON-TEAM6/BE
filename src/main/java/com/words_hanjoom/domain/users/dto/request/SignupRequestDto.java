@@ -37,6 +37,10 @@ public class SignupRequestDto {
     @NotNull(message = "생년월일은 필수 입력 값입니다.")
     private LocalDate birthDate;
 
+    @NotBlank
+    @Size(max = 30)
+    private String careerGoal;
+
     public User toEntity() {
         return User.builder()
                 .loginId(this.loginId)
@@ -44,6 +48,7 @@ public class SignupRequestDto {
                 .name(this.name)
                 .nickname(this.nickname)
                 .birthDate(this.birthDate)
+                .careerGoal(this.careerGoal)
                 .status("ACTIVE")
                 .build();
     }

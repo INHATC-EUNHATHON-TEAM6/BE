@@ -35,6 +35,9 @@ public class User {
     @Column(name = "birth_date", nullable = false)
     private LocalDate birthDate;
 
+    @Column(name = "career_goal", nullable = false)
+    private String careerGoal;
+
     @Column(name = "refresh_token", length = 255)
     private String refreshToken;
 
