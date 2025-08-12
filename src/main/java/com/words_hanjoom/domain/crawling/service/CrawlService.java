@@ -29,8 +29,8 @@ public class CrawlService {
 
     private final ArticleRepository repository;
 
-    public CrawlService(ArticleRepository repository) {
-        this.repository = repository;
+    public CrawlService(ArticleRepository articleRepository) {
+        this.repository = articleRepository;
     }
 
     public CrawlResult crawl(CrawlRequest request) {
@@ -73,6 +73,17 @@ public class CrawlService {
         return new CrawlResult(saved);
     }
 
+    private static final Map<String, String> CATEGORY_SELECTORS = Map.of(
+            "고용복지", "ul.news-list h2.news-tit a[href]",
+            "복지", "ul.news-list h2.news-tit a[href]", // 복지 == 고용복
+            "경제", "div.contents strong.module-tit a[href]",
+            "사회", "div.contents strong.module-tit a[href]",
+            "금융", "div.contents strong.module-tit a[href]",
+            "산업", "div.contents strong.module-tit a[href]",
+            "문화", "div.contents li h2.news-tit a[href]"
+            // 다른 카테고리들도 여기에 추가
+    );
+
     private Set<String> collectArticleUrls(String sectionUrl, String categoryName) throws IOException {
         Document doc = Jsoup.connect(sectionUrl)
                 .userAgent(UA)
@@ -80,7 +91,11 @@ public class CrawlService {
                 .timeout(TIMEOUT_MS)
                 .get();
 
-        Elements links = doc.select("a[href]");
+        // 카테고리별로 다른 셀렉터 사용
+        String selector = CATEGORY_SELECTORS.getOrDefault(categoryName, "a[href]");
+        System.out.println("[DEBUG] Using selector for " + categoryName + ": " + selector);
+
+        Elements links = doc.select(selector);
         Set<String> urls = new LinkedHashSet<>();
         for (Element a : links) {
             String href = a.absUrl("href");
