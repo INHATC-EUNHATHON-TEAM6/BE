@@ -3,6 +3,7 @@ package com.words_hanjoom.domain.wordbooks.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity @Table(name = "answer_comparisons")
@@ -29,8 +30,8 @@ public class AnswerComparison {
     @Column(name = "target_content", columnDefinition = "TEXT", nullable = false)
     private String targetContent;
 
-    @Column(name = "match_score", precision = 5, scale = 2)
-    private Double matchScore;
+    @Column(precision = 5, scale = 2)
+    private BigDecimal matchScore;
 
     @Column(name = "activity_at", nullable = false)
     private LocalDateTime activityAt;
