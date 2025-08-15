@@ -10,6 +10,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -33,14 +34,19 @@ public class CrawlService {
         this.repository = articleRepository;
     }
 
+    // 크롤링할 주소 entity 선언
+    @Transactional
     public CrawlResult crawl(CrawlRequest request) {
         if (request == null || request.sectionUrls() == null || request.sectionUrls().isEmpty()) {
             throw new CrawlException("크롤 요청에 섹션 URL이 없습니다.");
         }
+
+        // 요청 카테고리별 지정 ID(번호) 가져오기
         String categoryName = request.category();
         int categoryId = CategoryRegistry.categoryIdOf(categoryName);
 
         int saved = 0;
+        // 모든
         for (String sectionUrl : request.sectionUrls()) {
             try {
                 Set<String> links = collectArticleUrls(sectionUrl, categoryName);
@@ -180,9 +186,10 @@ public class CrawlService {
         return a;
     }
 
+
     private String extractBody(Document doc) {
         List<String> containers = List.of(
-                "article",
+                ".article-detail", ".article-body-contents", "article",
                 ".article", ".article-body", ".article_body", ".articleContent",
                 "#articletxt", "#article-body", "#newsView",
                 ".news-article", ".news_article", ".news_view", ".news-body", ".entry-content"
