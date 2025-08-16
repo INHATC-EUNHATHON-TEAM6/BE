@@ -75,6 +75,10 @@ public class TokenProvider {
 
     // JWT 토큰 파싱
     public Claims getClaims(String token) {
+        if (token == null || token.isBlank()) {
+            log.warn("JWT token is null or empty");
+            return null;
+        }
         try {
             return Jwts.parserBuilder()
                     .setSigningKey(key)

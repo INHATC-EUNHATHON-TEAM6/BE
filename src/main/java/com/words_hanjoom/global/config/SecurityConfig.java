@@ -29,7 +29,8 @@ public class SecurityConfig {
                 .cors(AbstractHttpConfigurer::disable)
                 .headers(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/signup").permitAll()
+                        .requestMatchers("/api/wordbook/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 // AuthenticationFilter를 UsernamePasswordAuthenticationFilter 전에 등록

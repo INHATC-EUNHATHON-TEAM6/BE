@@ -40,7 +40,7 @@ public class UnknownWordService {
         if (ac.getComparisonType() != AnswerComparison.ComparisonType.UNKNOWN_WORD) {
             throw new IllegalArgumentException("comparison_type must be UNKNOWN_WORD");
         }
-        List<String> tokens = parseCsv(ac.getUserContent());
+        List<String> tokens = parseCsv(ac.getUserAnswer());
         return saveAll(ac.getUserId(), tokens);
     }
 
