@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
-public class ScrapActivity {
+public class ScrapActivityDto {
     private String title;
     private String summary;
     private String category;
@@ -14,12 +14,12 @@ public class ScrapActivity {
     private String comment;
 
     @JsonCreator
-    public ScrapActivity(@JsonProperty("title") String title,
-                         @JsonProperty("summary") String summary,
-                         @JsonProperty("category") String category,
-                         @JsonProperty("keywords") List<String> keywords,
-                         @JsonProperty("vocabularies") List<String> vocabularies,
-                         @JsonProperty("comment") String comment) {
+    public ScrapActivityDto(@JsonProperty("title") String title,
+                            @JsonProperty("summary") String summary,
+                            @JsonProperty("category") String category,
+                            @JsonProperty("keywords") List<String> keywords,
+                            @JsonProperty("vocabularies") List<String> vocabularies,
+                            @JsonProperty("comment") String comment) {
         this.title = title;
         this.summary = summary;
         this.category = category;
