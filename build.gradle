@@ -24,7 +24,7 @@ repositories {
 }
 
 ext {
-    set('springAiVersion', "1.0.0")
+    set('springAiVersion', "1.0.1")
 }
 
 dependencies {
@@ -39,6 +39,7 @@ dependencies {
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    implementation 'io.github.cdimascio:dotenv-java:3.0.0'
 }
 
 dependencyManagement {
