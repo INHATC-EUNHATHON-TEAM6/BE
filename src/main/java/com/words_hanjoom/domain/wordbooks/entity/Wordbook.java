@@ -16,6 +16,6 @@ public class Wordbook {
     @Column(name = "wordbook_id")
     private Long wordbookId;
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id", nullable = false, unique = true)
     private Long userId;
 }

@@ -13,5 +13,5 @@ import java.io.Serializable;
 @EqualsAndHashCode
 public class WordbookWordId implements Serializable {
     private Long wordbookId;
-    private Integer wordId;
+    private Long wordId;
 }

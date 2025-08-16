@@ -1,93 +1,34 @@
 package com.words_hanjoom.infra;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
-@Component
-@RequiredArgsConstructor
-public class NiklDictionaryClient {
+/** 표준국어대사전 클라이언트 – words 테이블 스키마에 맞춘 결과 제공 */
+public interface NiklDictionaryClient {
 
-    private final RestClient restClient = RestClient.create();
+    /** 입력 표면형 → 표제어(lemma) 후보 1개 */
+    Optional<String> findLemma(String surface);
 
-    @Value("${nikl.base-url:https://opendict.korean.go.kr/api/search}")
-    private String baseUrl;
-
-    @Value("${nikl.api-key}")
-    private String apiKey;
+    /** 표제어 기준 상세 조회 (words 테이블 컬럼에 맵핑되는 필드 포함) */
+    Optional<Lexeme> lookup(String lemma);
 
     /**
-     * 표면형 -> 사전 검색 -> 가장 적합한 원형 반환.
-     * 우선순위:
-     *   1) 완전일치
-     *   2) '...다'로 끝나는 표제어 가점
-     *   3) 그 외 첫 결과
+     * words 테이블 맵핑용 DTO
+     * - wordName       -> words.word_name
+     * - synonyms       -> words.synonym (서비스에서 ", "로 join)
+     * - antonyms       -> words.antonym (서비스에서 ", "로 join)
+     * - definition     -> words.definition
+     * - categories     -> words.word_category (서비스에서 ", "로 join 또는 첫 값)
+     * - shoulderNo     -> words.shoulder_no
+     * - example        -> words.example
      */
-    public Optional<String> findLemma(String surfaceForm) {
-        try {
-            String q = URLEncoder.encode(surfaceForm, StandardCharsets.UTF_8);
-            String url = String.format(
-                    "%s?key=%s&q=%s&req_type=json&part=word&per_page=20",
-                    baseUrl, apiKey, q
-            );
-
-            NiklSearchResponse resp = restClient.get()
-                    .uri(url)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .retrieve()
-                    .body(NiklSearchResponse.class);
-
-            if (resp == null || resp.channel == null || resp.channel.items == null || resp.channel.items.isEmpty()) {
-                return Optional.empty();
-            }
-
-            List<NiklItem> items = resp.channel.items;
-
-            // 1) 완전일치
-            Optional<NiklItem> exact = items.stream()
-                    .filter(i -> surfaceForm.equals(i.word))
-                    .findFirst();
-            if (exact.isPresent()) return Optional.of(exact.get().word);
-
-            // 2) '...다' 형태 가점 -> 3) 그 외 첫 결과
-            return items.stream()
-                    .sorted(Comparator.comparingInt((NiklItem i) -> scoreLemmaLike(i.word)).reversed())
-                    .map(i -> i.word)
-                    .findFirst();
-
-        } catch (Exception e) {
-            return Optional.empty();
-        }
-    }
-
-    private int scoreLemmaLike(String w) {
-        // 매우 단순 휴리스틱: '다'로 끝나면 가점
-        return (w != null && w.endsWith("다")) ? 2 : 1;
-    }
-
-    // ===== 응답 DTO =====
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class NiklSearchResponse {
-        public Channel channel;
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class Channel {
-        public List<NiklItem> items;
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class NiklItem {
-        @JsonProperty("word")
-        public String word;
-    }
+    record Lexeme(
+            String wordName,
+            List<String> synonyms,
+            List<String> antonyms,
+            String definition,
+            List<String> categories,
+            Byte shoulderNo,
+            String example
+    ) {}
 }
