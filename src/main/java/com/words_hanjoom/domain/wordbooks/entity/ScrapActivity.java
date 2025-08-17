@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 
 @Entity @Table(name = "scrap_activities")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class AnswerComparison {
+public class ScrapActivity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "scrap_id")
@@ -38,8 +38,8 @@ public class AnswerComparison {
     @Column(name = "ai_feedback", columnDefinition = "TEXT", nullable = false)
     private String aiFeedback;
 
-    @Column(name = "evaluation_score", precision = 5, scale = 2)
-    private BigDecimal evaluationScore;
+    @Column(name = "evaluation_score", nullable = false)
+    private String evaluationScore;
 
     @CreationTimestamp
     @Column(name = "activity_at", nullable = false, updatable = false)

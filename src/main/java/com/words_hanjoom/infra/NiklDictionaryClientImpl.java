@@ -1,21 +1,26 @@
 package com.words_hanjoom.infra;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.MissingNode;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.time.Duration;
 import java.util.*;
-import java.util.stream.Collectors;
 
+
+@Slf4j
 @Component
 public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
-    private final WebClient dicWebClient;  // baseUrl: https://opendict.korean.go.kr/api (Config에서 주입)
+    private final @Qualifier("niklWebClient") WebClient dicWebClient;
 
-    @Value("${stdict.api.key}")
+    @Value("${nikl.api.key}")
     private String apiKey;
 
     private final ObjectMapper om = new ObjectMapper();
@@ -50,64 +55,122 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         }
     }
 
+
+    public String searchRaw(String word) {
+        if (apiKey == null || apiKey.isBlank()) return "NO_API_KEY";
+        return dicWebClient.get() // ← webClient -> dicWebClient
+                .uri(u -> u.path("/api/search.do")  // baseUrl이 https://stdict.korean.go.kr 인 경우
+                        .queryParam("key", apiKey)
+                        .queryParam("q", word)
+                        .queryParam("req_type", "json")
+                        .queryParam("start", 1)
+                        .queryParam("num", 10)
+                        .build())
+                .retrieve()
+                .bodyToMono(String.class)
+                .block(java.time.Duration.ofSeconds(5));
+    }
+
+
     @Override
     public Optional<Lexeme> lookup(String lemma) {
-        try {
-            String raw = dicWebClient.get()
-                    .uri(u -> u.path("/search.do")
-                            .queryParam("key", apiKey)
-                            .queryParam("q", lemma)
-                            .queryParam("req_type", "json")
-                            .queryParam("start", 1)
-                            .queryParam("num", 1)
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            if (raw == null || raw.isBlank()) return Optional.empty();
-
-            JsonNode item = firstNode(om.readTree(raw).path("channel").path("item"));
-
-            // === stdict 필드 매핑 ===
-            String wordName = nvl(item.path("word").asText(null), lemma);
-
-            // 정의
-            String definition = item.path("sense").path("definition").asText("");
-
-            // 범주 비슷한 것: 품사/타입을 카테고리 리스트로 묶어서 반환
-            List<String> categories = new ArrayList<>();
-            String pos  = item.path("pos").asText("");
-            String type = item.path("sense").path("type").asText("");
-            if (!pos.isBlank())  categories.add(pos);
-            if (!type.isBlank()) categories.add(type);
-
-            // 어깨번호
-            byte shoulderNo = 0;
-            String sup = item.path("sup_no").asText("");
-            if (!sup.isBlank()) {
-                try { shoulderNo = (byte) Integer.parseInt(sup); } catch (NumberFormatException ignored) {}
-            }
-
-            // 이 응답엔 유의어/반의어/예문이 없음 → 빈 리스트/빈 문자열
-            List<String> synonyms = List.of();
-            List<String> antonyms = List.of();
-            String example = "";
-
-            Lexeme lex = new Lexeme(
-                    wordName,
-                    synonyms,
-                    antonyms,
-                    definition,
-                    categories,
-                    shoulderNo,
-                    example
-            );
-            return Optional.of(lex);
-
-        } catch (Exception e) {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.error("[NIKL] api key missing (property=nikl.api.key)");
             return Optional.empty();
         }
+
+        // 1차: exact 시도, 2차: 느슨하게 재시도
+        SearchResponse res = fetch(lemma, true);
+        if (res == null || res.channel == null || res.channel.item == null || res.channel.item.isEmpty()) {
+            res = fetch(lemma, false); // fallback
+        }
+        if (res == null || res.channel == null || res.channel.item == null || res.channel.item.isEmpty()) {
+            log.info("[NIKL] no result for '{}'", lemma);
+            return Optional.empty();
+        }
+
+        // 정확히 매칭되는 것 우선, 없으면 첫 번째
+        SearchItem best = res.channel.item.stream()
+                .filter(i -> lemma.equals(i.word))
+                .findFirst()
+                .orElse(res.channel.item.get(0));
+
+        String definition = best.sense != null ? nvl(best.sense.definition, "") : "";
+        String pos  = nvl(best.pos, "");
+        String type = (best.sense != null) ? nvl(best.sense.type, "") : "";
+
+        java.util.List<String> categories = new java.util.ArrayList<>();
+        if (!pos.isBlank())  categories.add(pos);
+        if (!type.isBlank()) categories.add(type);
+
+        byte shoulderNo = 0;
+        try { if (best.sup_no != null && !best.sup_no.isBlank()) shoulderNo = (byte) Integer.parseInt(best.sup_no); } catch (Exception ignore) {}
+
+        return Optional.of(new Lexeme(
+                nvl(best.word, lemma),
+                java.util.List.of(),       // synonyms (검색 API엔 없음)
+                java.util.List.of(),       // antonyms (검색 API엔 없음)
+                definition,
+                categories,
+                shoulderNo,
+                ""                         // example (검색 API엔 없음)
+        ));
+    }
+
+    private SearchResponse fetch(String q, boolean strict) {
+        try {
+            return dicWebClient.get()
+                    .uri(u -> {
+                        var b = u.path("/api/search.do") // baseUrl: https://stdict.korean.go.kr
+                                .queryParam("key", apiKey)
+                                .queryParam("q", q)
+                                .queryParam("req_type", "json")
+                                .queryParam("start", 1)
+                                .queryParam("num", 10);
+                        if (strict) {
+                            b.queryParam("advanced", "y").queryParam("method", "exact");
+                        } // 느슨 모드에선 파라미터 생략
+                        return b.build();
+                    })
+                    .retrieve()
+                    .bodyToMono(SearchResponse.class)
+                    .block(java.time.Duration.ofSeconds(5));
+        } catch (Exception e) {
+            log.warn("[NIKL] fetch({},{}) failed: {}", q, strict ? "strict" : "loose", e.toString());
+            return null;
+        }
+    }
+
+    private static String nvl(String s, String fb) { return (s == null || s.isBlank()) ? fb : s; }
+
+    /* ====== DTO (응답 매핑) ====== */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    static class SearchResponse { public Channel channel; }
+
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    static class Channel { public java.util.List<SearchItem> item; public Integer total; }
+
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    static class SearchItem {
+        public String sup_no;
+        public String word;
+        public String target_code;
+        public Sense sense;
+        public String pos;
+    }
+
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    static class Sense {
+        public String definition;
+        public String type;
+        public String link;
+    }
+
+    /** 배열이면 0번째, 객체면 그대로, 비정상이면 null */
+    private JsonNode firstNodeSafe(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) return null;
+        if (node.isArray()) return node.size() > 0 ? node.get(0) : null;
+        return node; // 객체
     }
 
 
@@ -139,7 +202,5 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         return (s == null || s.isBlank()) ? null : s;
     }
 
-    private static String nvl(String value, String defaultValue) {
-        return (value == null || value.isBlank()) ? defaultValue : value;
-    }
+
 }

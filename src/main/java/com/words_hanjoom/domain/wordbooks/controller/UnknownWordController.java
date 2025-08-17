@@ -33,8 +33,8 @@ public class UnknownWordController {
         return ResponseEntity.ok(result);
     }
 
-    /** answer_comparisons에서 UNKNOWN_WORD 읽어 처리 */
-    @PostMapping("/unknown-words/from-comparison/{comparisonId}")
+    /** scrap_activities에서 UNKNOWN_WORD 읽어 처리 */
+    @PostMapping("/unknown-words/from-scrap-activity/{comparisonId}")
     public ResponseEntity<UnknownWordService.Result> saveFromComparison(@PathVariable Long comparisonId) {
         UnknownWordService.Result result = unknownWordService.processFromComparison(comparisonId);
         return ResponseEntity.ok(result);

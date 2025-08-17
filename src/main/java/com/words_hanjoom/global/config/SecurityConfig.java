@@ -10,6 +10,8 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
+import java.util.Locale;
+
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
@@ -29,9 +31,13 @@ public class SecurityConfig {
                 .cors(AbstractHttpConfigurer::disable)
                 .headers(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/wordbook/**").permitAll()
-                        .anyRequest().authenticated()
+                        .requestMatchers(
+                                        "/api/auth/**",
+                                        "/api/wordbook/**",
+                                        "/api/dev/nikl/**"
+                                // ✅ probe 포함 전부 허용
+                                ).permitAll()
+                                .anyRequest().authenticated()
                 )
                 // AuthenticationFilter를 UsernamePasswordAuthenticationFilter 전에 등록
                 .addFilterBefore(authenticationFilter,

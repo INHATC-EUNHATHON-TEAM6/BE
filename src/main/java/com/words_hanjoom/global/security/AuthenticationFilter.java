@@ -34,7 +34,8 @@ public class AuthenticationFilter extends OncePerRequestFilter {
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
     private static final List<String> WHITELIST = List.of(
             "/api/auth/**",
-            "/api/wordbook/**"
+            "/api/wordbook/**",
+            "/api/dev/nikl/**"
     );
 
     @Override

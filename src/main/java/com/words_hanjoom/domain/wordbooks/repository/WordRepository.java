@@ -12,10 +12,13 @@ import java.util.Optional;
 @Repository
 public interface WordRepository extends JpaRepository<Word, Long> {
 
+    Optional<Word> findByWordName(String wordName);  // ✅ 추가
+
+    // ↓ native upsert를 쓰지 않을 거면 아래 3개는 지워도 됨
     @Query(value = "SELECT word_id FROM words WHERE word_name = :name", nativeQuery = true)
     Optional<Long> findIdByName(@Param("name") String name);
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         INSERT INTO words (word_name, synonym, antonym, definition, word_category, example, created_at)
         VALUES (:name, :syn, :ant, :def, :cat, :ex, NOW())
@@ -27,13 +30,14 @@ public interface WordRepository extends JpaRepository<Word, Long> {
           example = VALUES(example),
           word_id = LAST_INSERT_ID(word_id)
         """, nativeQuery = true)
-    void upsertRaw(@Param("name") String name,
-                   @Param("syn") String synonym,
-                   @Param("ant") String antonym,
-                   @Param("def") String definition,
-                   @Param("cat") String category,
-                   @Param("ex") String example);
+    int upsertRaw(@Param("name") String name,
+                  @Param("syn") String synonym,
+                  @Param("ant") String antonym,
+                  @Param("def") String definition,
+                  @Param("cat") String category,
+                  @Param("ex") String example);
 
     @Query(value = "SELECT LAST_INSERT_ID()", nativeQuery = true)
     Long lastInsertId();
 }
+

@@ -36,9 +36,9 @@ public class UnknownWordService {
 
     @Transactional
     public Result processFromComparison(Long comparisonId) {
-        AnswerComparison ac = comparisonRepository.findById(comparisonId)
+        ScrapActivity ac = comparisonRepository.findById(comparisonId)
                 .orElseThrow(() -> new NoSuchElementException("comparison not found: " + comparisonId));
-        if (ac.getComparisonType() != AnswerComparison.ComparisonType.UNKNOWN_WORD) {
+        if (ac.getComparisonType() != ScrapActivity.ComparisonType.UNKNOWN_WORD) {
             throw new IllegalArgumentException("comparison_type must be UNKNOWN_WORD");
         }
         return saveAll(ac.getUserId(), parseCsv(ac.getUserAnswer()));

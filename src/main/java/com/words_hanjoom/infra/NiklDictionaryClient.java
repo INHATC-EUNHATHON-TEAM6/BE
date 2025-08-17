@@ -6,6 +6,8 @@ import java.util.Optional;
 /** 표준국어대사전 클라이언트 – words 테이블 스키마에 맞춘 결과 제공 */
 public interface NiklDictionaryClient {
 
+    String searchRaw(String q);
+
     /** 입력 표면형 → 표제어(lemma) 후보 1개 */
     Optional<String> findLemma(String surface);
 
