@@ -56,6 +56,9 @@ dependencies {
 
     // Jsoup java HTML 파서 의존성 추가
     implementation 'org.jsoup:jsoup:1.17.2'
+
+    // swagger 의존성 적용
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
 }
 
 dependencyManagement {
