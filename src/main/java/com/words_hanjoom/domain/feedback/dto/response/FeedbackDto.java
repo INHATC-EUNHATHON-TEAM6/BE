@@ -1,34 +1,26 @@
 package com.words_hanjoom.domain.feedback.dto.response;
 
+import com.words_hanjoom.domain.feedback.entity.ActivityType;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.List;
 import java.util.Map;
 
+@Getter
+@Setter
 public class FeedbackDto {
-    private String predTitle;
-    private String targetTitle;
-    private String predSummary;
-    private String targetSummary;
-    private String predCategory;
-    private String targetCategory;
-    private List<String> predKeywords;
-    private List<String> targetKeywords;
-    private List<String> vocabularies;
-    private String comment;
-    private Map<String, Number> score;
-    private Map<String, String> feedbacks;
+    private ActivityType activityType;
+    private String userAnswer;
+    private String aiAnswer;
+    private String aiFeedback;
+    private String evaluationScore;
 
-    public FeedbackDto(String predTitle, String targetTitle, String predSummary, String targetSummary, String predCategory, String targetCategory, List<String> predKeywords, List<String> targetKeywords, List<String> vocabularies, String comment, Map<String, Number> score, Map<String, String> feedbacks) {
-        this.predTitle = predTitle;
-        this.targetTitle = targetTitle;
-        this.predSummary = predSummary;
-        this.targetSummary = targetSummary;
-        this.predCategory = predCategory;
-        this.targetCategory = targetCategory;
-        this.predKeywords = predKeywords;
-        this.targetKeywords = targetKeywords;
-        this.vocabularies = vocabularies;
-        this.comment = comment;
-        this.score = score;
-        this.feedbacks = feedbacks;
+    public FeedbackDto(ActivityType activityType, String userAnswer, String aiAnswer, String aiFeedback, String evaluationScore) {
+        this.activityType = activityType;
+        this.userAnswer = userAnswer;
+        this.aiAnswer = aiAnswer;
+        this.aiFeedback = aiFeedback;
+        this.evaluationScore = evaluationScore;
     }
 }

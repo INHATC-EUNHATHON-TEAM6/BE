@@ -2,43 +2,59 @@ package com.words_hanjoom.domain.feedback.entity;
 
 import jakarta.persistence.*;
 import lombok.Getter;
+import lombok.Setter;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "articles")
 @Getter
+@Setter
 public class Article {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // InMemory DB에서 자동 증가
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "article_id")
     private Long articleId;       // PK (임시: InMemory에서 자동 증가)
-    @Column(name = "category_id")
+    @Column(name = "category_id", nullable = false)
     private Integer categoryId;   // FK -> 카테고리 테이블(ID 참조)
 
-    @Column(name = "title")
+    @Column(name = "title", nullable = false)
     private String title;
-    @Column(name = "contetn")
+    @Column(name = "content", nullable = false)
     private String content;       // 본문
-    @Column(name = "published_at")
-    private String publishedAt;   // 작성일자(문자열/ISO; DB 타입은 추후 LocalDateTime 권장)
-    @Column(name = "reporter_name")
+    @Column(name = "published_at", nullable = false)
+    private LocalDateTime publishedAt;   // 작성일자(문자열/ISO; DB 타입은 추후 LocalDateTime 권장)
+    @Column(name = "reporter_name", nullable = false)
     private String reporterName;  // 기자명
-    @Column(name = "publisher")
+    @Column(name = "publisher", nullable = false)
     private String publisher;     // 신문사
-    @Column(name = "article_url")
+    @Column(name = "article_url", nullable = false)
     private String articleUrl;    // 기사링크
 
-    @Column(name = "created_at")
-    private Instant createdAt;    // 생성시각
-    @Column(name = "deleted_at")
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;    // 생성시각
+    @Column(name = "deleted_at", nullable = true)
     private Instant deletedAt;    // 삭제시각(소프트 삭제용) - null이면 유효
 
     public Article() {}
 
+    public Article(Integer categoryId, String title, String content,
+                   LocalDateTime publishedAt, String reporterName, String publisher,
+                   String articleUrl, LocalDateTime createAt) {
+        this.categoryId = categoryId;
+        this.title = title;
+        this.content = content;
+        this.publishedAt = publishedAt;
+        this.reporterName = reporterName;
+        this.publisher = publisher;
+        this.articleUrl = articleUrl;
+        this.createdAt = createAt;
+    }
+
     public Article(Long articleId, Integer categoryId, String title, String content,
-                   String publishedAt, String reporterName, String publisher,
-                   String articleUrl, Instant createdAt, Instant deletedAt) {
+                   LocalDateTime publishedAt, String reporterName, String publisher,
+                   String articleUrl, LocalDateTime createAt) {
         this.articleId = articleId;
         this.categoryId = categoryId;
         this.title = title;
@@ -47,21 +63,8 @@ public class Article {
         this.reporterName = reporterName;
         this.publisher = publisher;
         this.articleUrl = articleUrl;
-        this.createdAt = createdAt;
-        this.deletedAt = deletedAt;
+        this.createdAt = createAt;
     }
-
-    // setters
-    public void setArticleId(Long articleId) { this.articleId = articleId; }
-    public void setCategoryId(Integer categoryId) { this.categoryId = categoryId; }
-    public void setTitle(String title) { this.title = title; }
-    public void setContent(String content) { this.content = content; }
-    public void setPublishedAt(String publishedAt) { this.publishedAt = publishedAt; }
-    public void setReporterName(String reporterName) { this.reporterName = reporterName; }
-    public void setPublisher(String publisher) { this.publisher = publisher; }
-    public void setArticleUrl(String articleUrl) { this.articleUrl = articleUrl; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
-    public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
 
     @Override public String toString() {
         return "Article{" +
