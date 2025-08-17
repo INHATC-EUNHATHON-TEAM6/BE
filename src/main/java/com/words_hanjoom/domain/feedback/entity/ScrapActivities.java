@@ -7,10 +7,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "scrap_activities")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
+@ToString(callSuper=false)
 @Builder
 public class ScrapActivities {
     @Id
@@ -42,4 +39,90 @@ public class ScrapActivities {
 
     @Column(name = "activity_at", nullable = false)
     private LocalDateTime activityAt;
+
+    public ScrapActivities() {}
+
+    public ScrapActivities(Long scrapId, Long userId, Long articleId, ActivityType comparisonType, String userAnswer, String aiAnswer, String aiFeedback, String evaluationScore, LocalDateTime activityAt) {
+        this.scrapId = scrapId;
+        this.userId = userId;
+        this.articleId = articleId;
+        this.comparisonType = comparisonType;
+        this.userAnswer = userAnswer;
+        this.aiAnswer = aiAnswer;
+        this.aiFeedback = aiFeedback;
+        this.evaluationScore = evaluationScore;
+        this.activityAt = activityAt;
+    }
+
+    public Long getScrapId() {
+        return scrapId;
+    }
+
+    public void setScrapId(Long scrapId) {
+        this.scrapId = scrapId;
+    }
+
+    public Long getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public Long getArticleId() {
+        return articleId;
+    }
+
+    public void setArticleId(Long articleId) {
+        this.articleId = articleId;
+    }
+
+    public ActivityType getComparisonType() {
+        return comparisonType;
+    }
+
+    public void setComparisonType(ActivityType comparisonType) {
+        this.comparisonType = comparisonType;
+    }
+
+    public String getUserAnswer() {
+        return userAnswer;
+    }
+
+    public void setUserAnswer(String userAnswer) {
+        this.userAnswer = userAnswer;
+    }
+
+    public String getAiAnswer() {
+        return aiAnswer;
+    }
+
+    public void setAiAnswer(String aiAnswer) {
+        this.aiAnswer = aiAnswer;
+    }
+
+    public String getAiFeedback() {
+        return aiFeedback;
+    }
+
+    public void setAiFeedback(String aiFeedback) {
+        this.aiFeedback = aiFeedback;
+    }
+
+    public String getEvaluationScore() {
+        return evaluationScore;
+    }
+
+    public void setEvaluationScore(String evaluationScore) {
+        this.evaluationScore = evaluationScore;
+    }
+
+    public LocalDateTime getActivityAt() {
+        return activityAt;
+    }
+
+    public void setActivityAt(LocalDateTime activityAt) {
+        this.activityAt = activityAt;
+    }
 }

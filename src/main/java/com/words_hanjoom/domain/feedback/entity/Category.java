@@ -6,8 +6,6 @@ import lombok.Setter;
 
 @Entity
 @Table(name="categories")
-@Getter
-@Setter
 public class Category {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -33,5 +31,21 @@ public class Category {
             case 10 -> this.categoryName = "사회";
             case 11 -> this.categoryName = "문화";
         }
+    }
+
+    public Long getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Long categoryId) {
+        this.categoryId = categoryId;
+    }
+
+    public String getCategoryName() {
+        return categoryName;
+    }
+
+    public void setCategoryName(String categoryName) {
+        this.categoryName = categoryName;
     }
 }

@@ -7,6 +7,7 @@ import lombok.Setter;
 import java.time.Instant;
 import java.time.LocalDateTime;
 
+
 @Entity
 @Table(name = "articles")
 @Getter
