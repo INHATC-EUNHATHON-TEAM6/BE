@@ -1,22 +1,16 @@
 package com.words_hanjoom.domain.feedback.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-
-import java.time.Instant;
 import java.time.LocalDateTime;
 
 
 @Entity
 @Table(name = "articles")
-@Getter
-@Setter
 public class Article {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "article_id")
-    private Long articleId;       // PK (임시: InMemory에서 자동 증가)
+    private Long articleId;       // PK
     @Column(name = "category_id", nullable = false)
     private Integer categoryId;   // FK -> 카테고리 테이블(ID 참조)
 
@@ -36,7 +30,7 @@ public class Article {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;    // 생성시각
     @Column(name = "deleted_at", nullable = true)
-    private Instant deletedAt;    // 삭제시각(소프트 삭제용) - null이면 유효
+    private LocalDateTime deletedAt;    // 삭제시각(소프트 삭제용) - null이면 유효
 
     public Article() {}
 
@@ -77,5 +71,85 @@ public class Article {
                 ", publisher='" + publisher + '\'' +
                 ", articleUrl='" + articleUrl + '\'' +
                 '}';
+    }
+
+    public Long getArticleId() {
+        return articleId;
+    }
+
+    public void setArticleId(Long articleId) {
+        this.articleId = articleId;
+    }
+
+    public Integer getCategoryId() {
+        return categoryId;
+    }
+
+    public void setCategoryId(Integer categoryId) {
+        this.categoryId = categoryId;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getContent() {
+        return content;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
+    }
+
+    public LocalDateTime getPublishedAt() {
+        return publishedAt;
+    }
+
+    public void setPublishedAt(LocalDateTime publishedAt) {
+        this.publishedAt = publishedAt;
+    }
+
+    public String getReporterName() {
+        return reporterName;
+    }
+
+    public void setReporterName(String reporterName) {
+        this.reporterName = reporterName;
+    }
+
+    public String getPublisher() {
+        return publisher;
+    }
+
+    public void setPublisher(String publisher) {
+        this.publisher = publisher;
+    }
+
+    public String getArticleUrl() {
+        return articleUrl;
+    }
+
+    public void setArticleUrl(String articleUrl) {
+        this.articleUrl = articleUrl;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
     }
 }

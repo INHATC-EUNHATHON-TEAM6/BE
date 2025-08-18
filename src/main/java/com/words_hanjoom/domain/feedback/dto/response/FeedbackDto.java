@@ -1,11 +1,6 @@
 package com.words_hanjoom.domain.feedback.dto.response;
 
 import com.words_hanjoom.domain.feedback.entity.ActivityType;
-import lombok.Getter;
-import lombok.Setter;
-
-import java.util.List;
-import java.util.Map;
 
 public class FeedbackDto {
     private ActivityType activityType;

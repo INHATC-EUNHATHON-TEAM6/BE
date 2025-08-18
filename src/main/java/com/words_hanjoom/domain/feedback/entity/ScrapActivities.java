@@ -2,13 +2,13 @@ package com.words_hanjoom.domain.feedback.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "scrap_activities")
 @ToString(callSuper=false)
-@Builder
 public class ScrapActivities {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,12 +37,13 @@ public class ScrapActivities {
     @Column(name = "evaluation_score", nullable = false)
     private String evaluationScore;
 
+    @CreationTimestamp
     @Column(name = "activity_at", nullable = false)
     private LocalDateTime activityAt;
 
     public ScrapActivities() {}
 
-    public ScrapActivities(Long scrapId, Long userId, Long articleId, ActivityType comparisonType, String userAnswer, String aiAnswer, String aiFeedback, String evaluationScore, LocalDateTime activityAt) {
+    public ScrapActivities(Long scrapId, Long userId, Long articleId, ActivityType comparisonType, String userAnswer, String aiAnswer, String aiFeedback, String evaluationScore) {
         this.scrapId = scrapId;
         this.userId = userId;
         this.articleId = articleId;
@@ -51,7 +52,7 @@ public class ScrapActivities {
         this.aiAnswer = aiAnswer;
         this.aiFeedback = aiFeedback;
         this.evaluationScore = evaluationScore;
-        this.activityAt = activityAt;
+        this.activityAt = LocalDateTime.now();
     }
 
     public Long getScrapId() {
