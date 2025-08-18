@@ -1,15 +1,11 @@
 package com.words_hanjoom.domain.crawling.repository;
 
 import com.words_hanjoom.domain.crawling.entity.Article;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.Collection;
-
 @Repository
-public interface ArticleRepository {
-    void save(Article article);
-    default void saveAll(Collection<Article> articles) {
-        if (articles == null) return;
-        for (Article a : articles) save(a);
-    }
+public interface ArticleRepository extends JpaRepository<Article, Long> {
+    // 특정 URL을 가진 기사가 존재하는지 확인하는 메서드
+    boolean existsByArticleUrl(String articleUrl);
 }

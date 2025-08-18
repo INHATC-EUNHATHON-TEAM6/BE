@@ -2,9 +2,11 @@ package com.words_hanjoom.domain.crawling.dto.response;
 
 import com.words_hanjoom.domain.crawling.entity.Article;
 
+import java.time.LocalDateTime;
+
 public record ArticleResponse(
         Long article_id,
-        Integer category_id,
+        Long category_id,
         String title,
         String body,
         String publishedAt,

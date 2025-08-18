@@ -49,6 +49,7 @@ public class User {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Builder.Default
     @Column(length = 20, nullable = false)
     private String status = "ACTIVE"; // 기본값 설정
 

@@ -1,57 +1,36 @@
 package com.words_hanjoom.domain.crawling.scheduler;
 
-import com.words_hanjoom.domain.crawling.dto.request.CrawlRequest;
 import com.words_hanjoom.domain.crawling.dto.response.CrawlResult;
-import com.words_hanjoom.domain.crawling.service.CrawlService;
+import com.words_hanjoom.domain.crawling.service.HankyungScraperService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class CrawlScheduler {
 
-    private final CrawlService crawlService;
+    private final HankyungScraperService hankyungScraperService;
+
+    // 스케줄링할 카테고리 목록만 정의
+    private final List<String> categoriesToCrawl = List.of(
+            "경제", "복지", "금융", "산업", "사회", "문화"
+    );
 
     /** 매시간 정각(Asia/Seoul) 실행 */
-    @Scheduled(cron = "0 * * * * *", zone = "Asia/Seoul")
+    //@Scheduled(cron = "0 * * * * *", zone = "Asia/Seoul") // 필요에 따라 주석 해제
     public void runHourly() {
-        // 1) 카테고리별 섹션 URL 구성
-        Map<String, List<String>> sectionMap = Map.of(
-                "경제", List.of(
-                        "https://www.hankyung.com/economy",
-                        "https://www.hankyung.com/economy/economic-policy",
-                        "https://www.hankyung.com/economy/macro",
-                        "https://www.hankyung.com/economy/forex",
-                        "https://www.hankyung.com/economy/tax"
-                ),
-                "복지", List.of(
-                        "https://www.hankyung.com/economy/job-welfare"
-                ),
-                "금융", List.of("https://www.hankyung.com/financial-market"),
-                "산업", List.of("https://www.hankyung.com/industry"),
-                "사회", List.of(
-                        "https://www.hankyung.com/society",
-                        "https://www.hankyung.com/society/administration",
-                        "https://www.hankyung.com/society/education",
-                        "https://www.hankyung.com/society/employment"
-                ),
-                "문화", List.of("https://www.hankyung.com/culture")
-        );
-
-        // 2) 순회 실행
-        sectionMap.forEach((category, urls) -> {
+        categoriesToCrawl.forEach(category -> {
             try {
-                CrawlRequest req = new CrawlRequest(category, urls);
-                CrawlResult result = crawlService.crawl(req);
-                log.info("[{}] 섹션:{}개 → 저장:{}건", category, urls.size(), result.savedCount());
+                // 서비스에 카테고리 이름만 전달하여 호출
+                CrawlResult result = hankyungScraperService.scrapeHankyung(category);
+                log.info("[{}] 크롤링 완료: 저장 {}건", category, result.savedCount());
             } catch (Exception e) {
-                log.warn("[{}] 크롤 실패: {}", category, e.getMessage());
+                log.warn("[{}] 크롤링 실패: {}", category, e.getMessage());
             }
         });
     }
