@@ -7,7 +7,9 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "words")
+@Table(name = "words",
+        uniqueConstraints = @UniqueConstraint(name = "uq_words_target_sense",
+                columnNames = { "target_code", "sense_no" }))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -20,6 +22,12 @@ public class Word {
     @Column(name = "word_id")
     private Long wordId;
 
+    @Column(name = "target_code", nullable = false)
+    private Long targetCode;     // NIKL item.target_code
+
+    @Column(name = "sense_no", nullable = false)
+    private Short senseNo;       // view.item.sense[n] 의 n(1..N)
+
     @Column(name = "word_name", length = 100, nullable = false)
     private String wordName;
 
@@ -29,6 +37,7 @@ public class Word {
     @Column(name = "antonym", length = 100, nullable = false)
     private String antonym;
 
+    @Lob
     @Column(name = "definition", columnDefinition = "TEXT", nullable = false)
     private String definition;
 
@@ -38,6 +47,7 @@ public class Word {
     @Column(name = "shoulder_no", nullable = false)
     private Byte shoulderNo;
 
+    @Lob
     @Column(name = "example", columnDefinition = "TEXT", nullable = false)
     private String example;
 
