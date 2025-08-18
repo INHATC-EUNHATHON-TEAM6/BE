@@ -32,13 +32,7 @@ public class UnknownWordService {
     private final WordbookWordRepository wordbookWordRepository;
     private final AnswerComparisonRepository comparisonRepository;
 
-    @Qualifier("niklDictionaryClientImpl")
     private final NiklDictionaryClient dictClient;
-
-    @PostConstruct
-    void whoAmI() {
-        System.out.println(">>> dictClient bean = " + dictClient.getClass().getName());
-    }
 
     @Transactional
     public Result processCsv(Long userId, String csv) {

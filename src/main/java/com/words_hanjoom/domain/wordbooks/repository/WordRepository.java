@@ -15,6 +15,8 @@ public interface WordRepository extends JpaRepository<Word, Long> {
 
     Optional<Word> findByTargetCodeAndSenseNo(Long targetCode, Short senseNo);
 
+    Optional<Word> findByWordName(String wordName);
+
     // 같은 표기어(동음이의/동형이의) 전부 가져올 때
     List<Word> findAllByWordName(String wordName);
 

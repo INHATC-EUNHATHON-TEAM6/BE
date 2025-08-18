@@ -3,10 +3,9 @@ package com.words_hanjoom.domain.wordbooks.service;
 import com.words_hanjoom.domain.wordbooks.dto.request.SearchRequest;
 import com.words_hanjoom.domain.wordbooks.dto.response.SearchResponse;
 import com.words_hanjoom.domain.wordbooks.dto.response.ViewResponse;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
+import com.words_hanjoom.infra.dictionary.NiklDictionaryClient;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -14,52 +13,33 @@ import java.util.List;
 import java.util.Optional;
 
 @Service
+@RequiredArgsConstructor
 public class DictionaryService {
 
-    private final WebClient dicWebClient;
-    private final String apiKey;
+    private final NiklDictionaryClient dictClient;
 
-    public DictionaryService(
-            @Qualifier("dicWebClient") WebClient dicWebClient,
-            @Value("${nikl.api.key}") String apiKey
-    ) {
-        this.dicWebClient = dicWebClient;
-        this.apiKey = apiKey;
+    public Mono<SearchResponse> search(SearchRequest req) {
+        return dictClient.search(req);
     }
 
-    public Mono<SearchResponse> search(String q) {
-        return dicWebClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/search.do")
-                        .queryParam("key", apiKey)
-                        .queryParam("q", q)
-                        .queryParam("req_type", "json")
-                        .build())
-                .retrieve()
-                .bodyToMono(SearchResponse.class);
+    public Mono<ViewResponse> view(long targetCode) {
+        return dictClient.view(targetCode);
     }
 
-    public Mono<ViewResponse> view(String targetCode) {
-        return dicWebClient.get()
-                .uri(uriBuilder -> uriBuilder
-                        .path("/view.do")
-                        .queryParam("key", apiKey)
-                        .queryParam("target_code", targetCode)
-                        .queryParam("req_type", "json")
-                        .build())
-                .retrieve()
-                .bodyToMono(ViewResponse.class);
-    }
-
+    /** search → 각 item의 target_code로 view까지 합쳐 상세 리스트 반환 */
     public Mono<List<ViewResponse.Item>> searchWithDetail(SearchRequest req) {
-        return search(req.getQ())
+        return dictClient.search(req)
                 .flatMapMany(sr -> Flux.fromIterable(
-                        Optional.ofNullable(sr.getChannel().getItem()).orElse(List.of())
+                        sr.getChannel() == null || sr.getChannel().getItem() == null
+                                ? List.<SearchResponse.Item>of()
+                                : sr.getChannel().getItem()
                 ))
-                .map(item -> String.valueOf(item.getTargetCode()))
-                .flatMap(this::view)
+                .map(SearchResponse.Item::getTargetCode)
+                .flatMap(dictClient::view)
                 .flatMap(vr -> Flux.fromIterable(
-                        Optional.ofNullable(vr.getChannel().getItem()).orElse(List.of())
+                        vr.getChannel() == null || vr.getChannel().getItem() == null
+                                ? List.<ViewResponse.Item>of()
+                                : vr.getChannel().getItem()
                 ))
                 .collectList();
     }

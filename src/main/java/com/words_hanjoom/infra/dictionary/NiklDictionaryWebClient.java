@@ -29,19 +29,14 @@ public class NiklDictionaryWebClient implements NiklDictionaryClient {
 
     @Override
     public Mono<SearchResponse> search(SearchRequest req) {
-        System.out.println(">>> Search called!");
         return niklWebClient.get()
                 .uri(uri -> uri.path("/search.do")
                         .queryParam("key", apiKey)
                         .queryParam("q", req.getQ())
                         .queryParam("req_type", "json")
                         .build())
-                //.retrieve()
-                //.bodyToMono(SearchResponse.class);
-                .exchangeToMono(resp -> {
-                    System.out.println(">>> Response Content-Type = " + resp.headers().contentType());
-                    return resp.bodyToMono(SearchResponse.class);
-                });
+                .retrieve()
+                .bodyToMono(SearchResponse.class);
     }
 
     @Override
@@ -52,12 +47,9 @@ public class NiklDictionaryWebClient implements NiklDictionaryClient {
                         .queryParam("target_code", targetCode)
                         .queryParam("req_type", "json")
                         .build())
-                //.retrieve()
-                //.bodyToMono(ViewResponse.class);
-                .exchangeToMono(resp -> {
-                    System.out.println(">>> Response Content-Type = " + resp.headers().contentType());
-                    return resp.bodyToMono(ViewResponse.class);
-                });
+                .retrieve()
+                .bodyToMono(ViewResponse.class);
+
     }
 
     @Override

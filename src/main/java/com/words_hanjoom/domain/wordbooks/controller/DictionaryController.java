@@ -1,14 +1,13 @@
 package com.words_hanjoom.domain.wordbooks.controller;
 
 import com.words_hanjoom.domain.wordbooks.dto.request.SearchRequest;
+import com.words_hanjoom.domain.wordbooks.dto.response.ViewResponse;
 import com.words_hanjoom.domain.wordbooks.service.DictionaryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -17,37 +16,32 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class DictionaryController {
 
-    private final DictionaryService service;
+    private final DictionaryService service;  // ← 서비스만 주입
 
     @GetMapping("/search")
     public Mono<?> search(
             @RequestParam String q,
-            @RequestParam(defaultValue = "false") boolean detail,
             @RequestParam(defaultValue = "json") String req_type,
             @RequestParam(defaultValue = "1") int start,
             @RequestParam(defaultValue = "10") int num,
-            @RequestParam(defaultValue = "n") String advanced
+            @RequestParam(defaultValue = "n") String advanced,
+            @RequestParam(defaultValue = "false") boolean detail
     ) {
-        if (detail) {
-            var req = new SearchRequest(
-                    q, req_type, start, num, advanced,
-                    Optional.empty(), // target
-                    Optional.empty(), // method
-                    Optional.empty(), // type1
-                    Optional.empty(), // type2
-                    Optional.empty(), // pos
-                    Optional.empty(), // cat
-                    Optional.empty(), // multimedia
-                    Optional.empty(), // letterS
-                    Optional.empty(), // letterE
-                    Optional.empty(), // updateS
-                    Optional.empty()  // updateE
-            );
-            // 상세모드: 검색 후 각 item의 상세 조회까지
-            return service.searchWithDetail(req);
-        }
+        var req = new SearchRequest(
+                q, req_type, start, num, advanced,
+                Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(),
+                Optional.empty()
+        );
 
-        // 단순 검색(q만 사용)
-        return service.search(q);
+        return detail ? service.searchWithDetail(req) : service.search(req);
+    }
+
+    @GetMapping("/view")
+    public Mono<ViewResponse> view(@RequestParam("target_code") long targetCode) {
+        return service.view(targetCode);
     }
 }
