@@ -2,7 +2,7 @@ package com.words_hanjoom.domain.wordbooks.service;
 
 import com.words_hanjoom.domain.wordbooks.entity.*;
 import com.words_hanjoom.domain.wordbooks.repository.*;
-import com.words_hanjoom.infra.NiklDictionaryClient;
+import com.words_hanjoom.infra.dictionary.NiklDictionaryClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
