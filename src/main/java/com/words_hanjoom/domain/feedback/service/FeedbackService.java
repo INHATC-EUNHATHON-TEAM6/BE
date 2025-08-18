@@ -50,6 +50,7 @@ public class FeedbackService {
     }
 
     public FeedbacksDto feedbackScrapActivity(ScrapActivityDto activity) throws JsonProcessingException {
+        // ❗️하드코딩!
         Long userId = 1L;
         Optional<Article> optionalArticle = articleRepository.findById(activity.getArticleId());
         Article article = optionalArticle.orElseThrow(
@@ -129,7 +130,9 @@ public class FeedbackService {
         return new FeedbackDto(ActivityType.KEYWORD, String.join(",", userKeywords), String.join(",", aiKeywords), aiFeedback, Double.toString(score));
     }
 
+    // ❗️하드코딩!
     // 단어장 관련 OpenAPI 로직, Repository 메서드 필요
+    // OpenAI API를 통해 국립국어원 API로 검색 안 되는 어휘들을 처리하는 로직은 추후에 적용
     private FeedbackDto getWordsToLearn(List<String> vocabularies) {
         return new FeedbackDto(ActivityType.UNKNOWN_WORD, String.join(",", vocabularies), "", "", "");
     }
