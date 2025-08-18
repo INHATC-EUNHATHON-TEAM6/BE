@@ -44,7 +44,7 @@ public class DictionaryService {
                 .uri(uriBuilder -> uriBuilder
                         .path("/view.do")
                         .queryParam("key", apiKey)
-                        .queryParam("q", targetCode)
+                        .queryParam("target_code", targetCode)
                         .queryParam("req_type", "json")
                         .build())
                 .retrieve()

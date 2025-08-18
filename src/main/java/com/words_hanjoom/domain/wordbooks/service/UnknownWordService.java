@@ -4,6 +4,7 @@ import com.words_hanjoom.domain.wordbooks.entity.*;
 import com.words_hanjoom.domain.wordbooks.repository.*;
 import com.words_hanjoom.infra.dictionary.NiklDictionaryClient;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -11,11 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.text.Normalizer;
 import java.util.*;
 import java.util.stream.Collectors;
+import jakarta.annotation.PostConstruct;
+
 
 @Service
 @RequiredArgsConstructor
 public class UnknownWordService {
-
 
     private static final int LEN_WORD_NAME = 100;
     private static final int LEN_SYNONYM   = 100;
@@ -29,7 +31,14 @@ public class UnknownWordService {
     private final WordbookRepository wordbookRepository;
     private final WordbookWordRepository wordbookWordRepository;
     private final AnswerComparisonRepository comparisonRepository;
+
+    @Qualifier("niklDictionaryClientImpl")
     private final NiklDictionaryClient dictClient;
+
+    @PostConstruct
+    void whoAmI() {
+        System.out.println(">>> dictClient bean = " + dictClient.getClass().getName());
+    }
 
     @Transactional
     public Result processCsv(Long userId, String csv) {
@@ -95,7 +104,7 @@ public class UnknownWordService {
             if (!Objects.equals(safe(word.getAntonym()), antonymStr))       { word.setAntonym(antonymStr); needUpdate = true; }
             if (!Objects.equals(safe(word.getDefinition()), definition))    { word.setDefinition(definition); needUpdate = true; }
             if (!Objects.equals(safe(word.getWordCategory()), categoryStr)) { word.setWordCategory(categoryStr); needUpdate = true; }
-            if (!Objects.equals(safe(word.getExample()), example))          { word.setExample(exampleStr); needUpdate = true; }
+            if (!Objects.equals(safe(word.getExample()), exampleStr))          { word.setExample(exampleStr); needUpdate = true; }
             if (!Objects.equals(word.getShoulderNo(), shoulderNo))          { word.setShoulderNo(shoulderNo); needUpdate = true; }
             if (needUpdate) wordRepository.save(word);
 

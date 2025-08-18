@@ -2,6 +2,7 @@ package com.words_hanjoom.domain.wordbooks.controller;
 
 import com.words_hanjoom.domain.wordbooks.service.UnknownWordService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,7 +13,9 @@ import java.util.List;
 @RequiredArgsConstructor
 public class UnknownWordController {
 
+    @Qualifier("niklDictionaryClientImpl")
     private final UnknownWordService unknownWordService;
+
 
     // 단어 저장 테스트
     @PostMapping("/save")

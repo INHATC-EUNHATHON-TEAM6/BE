@@ -4,19 +4,23 @@ import com.words_hanjoom.domain.wordbooks.dto.request.SearchRequest;
 import com.words_hanjoom.domain.wordbooks.dto.response.SearchResponse;
 import com.words_hanjoom.domain.wordbooks.dto.response.ViewResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
-import java.util.List;
 import java.util.Optional;
 
+@Primary
 @Component
 @RequiredArgsConstructor
 public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
+    @Qualifier("dicWebClient")
     private final WebClient dicWebClient;
 
     @Value("${nikl.api.key}")
@@ -25,6 +29,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     // ---- reactive ----
     @Override
     public Mono<SearchResponse> search(SearchRequest req) {
+        System.out.println(">>> Search called!");
         return dicWebClient.get()
                 .uri(uri -> uri.path("/search.do")
                         .queryParam("key", apiKey)
@@ -45,8 +50,10 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                         .queryParamIfPresent("update_s", req.updateS())
                         .queryParamIfPresent("update_e", req.updateE())
                         .build())
-                .retrieve()
-                .bodyToMono(SearchResponse.class);
+                .exchangeToMono(resp -> {
+                    System.out.println("NIKL Content-Type = " + resp.headers().contentType());
+                    return resp.bodyToMono(SearchResponse.class);
+                });
     }
 
     @Override
@@ -57,8 +64,12 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                         .queryParam("target_code", targetCode)
                         .queryParam("req_type", "json")
                         .build())
-                .retrieve()
-                .bodyToMono(ViewResponse.class);
+                //.retrieve()
+                //.bodyToMono(ViewResponse.class);
+                .exchangeToMono(resp -> {
+                    System.out.println(">>> Response Content-Type = " + resp.headers().contentType());
+                    return resp.bodyToMono(ViewResponse.class);
+                });
     }
 
     // ---- facade (blocking) ----

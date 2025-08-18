@@ -49,7 +49,6 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.12.0'
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
-
     // jwt Claims 관련 의존성
 
     implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
@@ -73,4 +72,8 @@ repositories {
 
 springBoot {
     mainClass = 'com.words_hanjoom.WordsHanjoomApplication'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }

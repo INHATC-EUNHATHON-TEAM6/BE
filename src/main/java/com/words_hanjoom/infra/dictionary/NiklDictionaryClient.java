@@ -12,8 +12,8 @@ import java.util.Optional;
 public interface NiklDictionaryClient {
 
     // reactive
-    Mono<SearchResponse> search(SearchRequest req);    // /search.do
-    Mono<ViewResponse>   view(long targetCode);        // /view.do
+    Mono<SearchResponse> search(SearchRequest req);
+    Mono<ViewResponse> view(long targetCode);
 
     // blocking facade (기존 서비스 호환용)
     Optional<String> findLemma(String surface);
