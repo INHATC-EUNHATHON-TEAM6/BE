@@ -81,7 +81,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 Optional.empty(),        // letterS
                 Optional.empty(),        // letterE
                 Optional.empty(),        // updateS
-                Optional.empty()         // updateE   <-- 이게 빠져서 15개였음
+                Optional.empty()         // updateE
         );
 
         var sr = search(req).block(Duration.ofSeconds(5));
@@ -107,7 +107,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 Optional.empty(),    // letterS
                 Optional.empty(),    // letterE
                 Optional.empty(),    // updateS
-                Optional.empty()     // updateE  ← 이 줄이 빠져서 15개였음
+                Optional.empty()     // updateE
         );
 
         var sr = search(req).block(Duration.ofSeconds(5));

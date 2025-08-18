@@ -16,12 +16,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UnknownWordService {
 
+
     private static final int LEN_WORD_NAME = 100;
     private static final int LEN_SYNONYM   = 100;
     private static final int LEN_ANTONYM   = 100;
     private static final int LEN_CATEGORY  = 30;
     private static final int LEN_EXAMPLE   = 2000;
     private static final int LEN_DEF       = 4000;
+    private static final String DELIM = ",";
 
     private final WordRepository wordRepository;
     private final WordbookRepository wordbookRepository;
@@ -45,7 +47,7 @@ public class UnknownWordService {
     }
 
     // ===== 내부 파이프라인 =====
-    private Result saveAll(Long userId, List<String> tokens) {
+    public Result saveAll(Long userId, List<String> tokens) {
         // B안: 엔티티 get-or-create
         Wordbook wordbook = wordbookRepository.getOrCreateEntity(userId);
 
@@ -56,17 +58,20 @@ public class UnknownWordService {
             final String lemma    = dictClient.findLemma(surface).orElse(surface);
             final String wordName = cut(lemma, LEN_WORD_NAME);
 
-            var lexOpt       = dictClient.lookup(wordName); // 네 클라의 필드명에 맞춰 사용
-            var synonyms     = lexOpt.map(NiklDictionaryClient.Lexeme::synonyms).orElseGet(List::of);
-            var antonyms     = lexOpt.map(NiklDictionaryClient.Lexeme::antonyms).orElseGet(List::of);
-            var definition   = cut(lexOpt.map(NiklDictionaryClient.Lexeme::definition).orElse(""), LEN_DEF);
-            var categories   = lexOpt.map(NiklDictionaryClient.Lexeme::categories).orElseGet(List::of);
-            var example      = cut(lexOpt.map(NiklDictionaryClient.Lexeme::example).orElse(""), LEN_EXAMPLE);
-            var shoulderNo   = lexOpt.map(NiklDictionaryClient.Lexeme::shoulderNo).orElse((byte) 0);
+            var lexOpt     = dictClient.lookup(wordName);
 
-            final String synonymStr = cut(joinAndLimitEach(dedup(synonyms), ", ", LEN_SYNONYM), LEN_SYNONYM);
-            final String antonymStr = cut(joinAndLimitEach(dedup(antonyms), ", ", LEN_ANTONYM), LEN_ANTONYM);
-            final String categoryStr= cut(joinAndLimitEach(dedup(categories), ", ", LEN_CATEGORY), LEN_CATEGORY);
+            var synonyms   = lexOpt.map(NiklDictionaryClient.Lexeme::synonyms).orElseGet(java.util.List::of);
+            var antonyms   = lexOpt.map(NiklDictionaryClient.Lexeme::antonyms).orElseGet(java.util.List::of);
+            var definition = cut(lexOpt.map(NiklDictionaryClient.Lexeme::definition).orElse(""), LEN_DEF);
+            var categories = lexOpt.map(NiklDictionaryClient.Lexeme::categories).orElseGet(java.util.List::of);
+            var example    = lexOpt.map(NiklDictionaryClient.Lexeme::example).orElseGet(java.util.List::of); // ← 여기
+
+            var shoulderNo = lexOpt.map(NiklDictionaryClient.Lexeme::shoulderNo).orElse((byte) 0);
+
+            final String synonymStr  = cut(joinAndLimitEach(dedup(synonyms), DELIM, LEN_SYNONYM), LEN_WORD_NAME);
+            final String antonymStr  = cut(joinAndLimitEach(dedup(antonyms), DELIM, LEN_ANTONYM), LEN_WORD_NAME);
+            final String categoryStr = cut(joinAndLimitEach(dedup(categories), DELIM, LEN_CATEGORY), LEN_WORD_NAME);
+            final String exampleStr  = cut(joinAndLimitEach(dedup(example), DELIM, LEN_EXAMPLE), LEN_WORD_NAME);
 
             // words upsert/find
             Word word = wordRepository.findByWordName(wordName).orElseGet(() -> {
@@ -78,7 +83,7 @@ public class UnknownWordService {
                             .definition(definition)
                             .wordCategory(categoryStr)
                             .shoulderNo(shoulderNo)
-                            .example(example)
+                            .example(exampleStr)
                             .build());
                 } catch (DataIntegrityViolationException e) {
                     return wordRepository.findByWordName(wordName).orElseThrow(() -> e);
@@ -90,7 +95,7 @@ public class UnknownWordService {
             if (!Objects.equals(safe(word.getAntonym()), antonymStr))       { word.setAntonym(antonymStr); needUpdate = true; }
             if (!Objects.equals(safe(word.getDefinition()), definition))    { word.setDefinition(definition); needUpdate = true; }
             if (!Objects.equals(safe(word.getWordCategory()), categoryStr)) { word.setWordCategory(categoryStr); needUpdate = true; }
-            if (!Objects.equals(safe(word.getExample()), example))          { word.setExample(example); needUpdate = true; }
+            if (!Objects.equals(safe(word.getExample()), example))          { word.setExample(exampleStr); needUpdate = true; }
             if (!Objects.equals(word.getShoulderNo(), shoulderNo))          { word.setShoulderNo(shoulderNo); needUpdate = true; }
             if (needUpdate) wordRepository.save(word);
 

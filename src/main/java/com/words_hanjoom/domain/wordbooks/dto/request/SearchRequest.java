@@ -20,6 +20,33 @@ public record SearchRequest(
         Optional<Integer> updateS,
         Optional<Integer> updateE
 ) {
+    // 기본값 & null 방어 (compact canonical constructor)
+    public SearchRequest {
+        reqType   = (reqType == null || reqType.isBlank()) ? "json" : reqType;
+        start     = (start == null) ? 1  : start;
+        num       = (num == null)   ? 10 : num;
+        advanced  = (advanced == null || advanced.isBlank()) ? "n" : advanced;
+
+        target     = target     == null ? Optional.empty() : target;
+        method     = method     == null ? Optional.empty() : method;
+        type1      = type1      == null ? Optional.empty() : type1;
+        type2      = type2      == null ? Optional.empty() : type2;
+        pos        = pos        == null ? Optional.empty() : pos;
+        cat        = cat        == null ? Optional.empty() : cat;
+        multimedia = multimedia == null ? Optional.empty() : multimedia;
+        letterS    = letterS    == null ? Optional.empty() : letterS;
+        letterE    = letterE    == null ? Optional.empty() : letterE;
+        updateS    = updateS    == null ? Optional.empty() : updateS;
+        updateE    = updateE    == null ? Optional.empty() : updateE;
+    }
+
+    // 사용 중인 코드 호환용 getter (record 기본 접근자 q(), reqType()도 그대로 쓸 수 있음)
+    public String getQ()       { return q; }
+    public String getReqType() { return reqType; }
+    public Integer getStart()  { return start; }
+    public Integer getNum()    { return num; }
+    public String getAdvanced(){ return advanced; }
+
     public static SearchRequest basic(String q) {
         return new SearchRequest(
                 q, "json", 1, 10, "n",

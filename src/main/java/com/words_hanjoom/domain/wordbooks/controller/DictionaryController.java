@@ -40,7 +40,6 @@ public class DictionaryController {
                 Optional.empty()  // updateE
         );
 
-        return detail ? service.searchWithDetail(req)
-                : service.searchOnly(req);
+        return service.searchWithDetail(req);
     }
 }

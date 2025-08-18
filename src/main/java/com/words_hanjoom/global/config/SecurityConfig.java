@@ -32,16 +32,14 @@ public class SecurityConfig {
                 .headers(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
-                                        "/api/auth/**",
-                                        "/api/wordbook/**",
-                                        "/api/dev/nikl/**"
-                                // ✅ probe 포함 전부 허용
-                                ).permitAll()
-                                .anyRequest().authenticated()
-                )
-                // AuthenticationFilter를 UsernamePasswordAuthenticationFilter 전에 등록
-                .addFilterBefore(authenticationFilter,
-                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
+                                "/api/auth/**",
+                                "/api/wordbooks/dict/**",
+                                "/api/dev/nikl/**",
+                                "/api/words/**"
+                        ).permitAll()
+                        .anyRequest().authenticated()
+                );
+        // .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class); // ⛔ 잠시 주석
 
         return http.build();
     }

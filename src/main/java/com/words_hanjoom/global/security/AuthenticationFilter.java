@@ -1,16 +1,9 @@
 package com.words_hanjoom.global.security;
-
-import com.words_hanjoom.global.util.HeaderUtil;
-import io.jsonwebtoken.Claims;
+import lombok.extern.slf4j.Slf4j;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.log4j.Log4j2;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.util.AntPathMatcher;
@@ -24,71 +17,30 @@ import java.util.List;
  * - 토큰 없으면 검증 시도하지 않음(불필요 경고 방지)
  * - 유효한 토큰이면 SecurityContext에 Authentication 채움
  */
+@Slf4j
 @Component
-@Log4j2
-@RequiredArgsConstructor
 public class AuthenticationFilter extends OncePerRequestFilter {
 
-    private final TokenProvider tokenProvider;
-
-    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
-    private static final List<String> WHITELIST = List.of(
+    private static final AntPathMatcher MATCHER = new AntPathMatcher();
+    private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/**",
-            "/api/wordbook/**",
-            "/api/dev/nikl/**"
+            "/api/wordbooks/dict/**",   // ← 여기 포함
+            "/api/dev/nikl/**",
+            "/api/words/**"             // 테스트 중이면 공개
     );
 
     @Override
-    protected void doFilterInternal(
-            @NonNull HttpServletRequest request,
-            @NonNull HttpServletResponse response,
-            @NonNull FilterChain filterChain
-    ) throws ServletException, IOException {
-
-        // 화이트리스트/OPTIONS는 shouldNotFilter에서 걸러지지만
-        // 방어적으로도 토큰 없으면 바로 패스
-        String accessToken = HeaderUtil.getAccessTokenFromHeader(request);
-        if (accessToken == null || accessToken.isBlank()) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        try {
-            Claims claims = tokenProvider.getClaims(accessToken);
-            if (claims != null) {
-                Authentication authentication = tokenProvider.getAuthentication(claims, accessToken);
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-            }
-        } catch (Exception e) {
-            // 토큰 불량 등 예외 시 컨텍스트 비움(실패는 이후 인가 단계에서 처리)
-            SecurityContextHolder.clearContext();
-            log.debug("JWT processing failed: {}", e.getMessage());
-        }
-
-        filterChain.doFilter(request, response);
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        boolean skip = PUBLIC_PATHS.stream().anyMatch(p -> MATCHER.match(p, request.getRequestURI()));
+        log.info("[AuthFilter] shouldNotFilter uri={} skip={}", request.getRequestURI(), skip);
+        return skip;
     }
 
-    /**
-     * true를 반환하면 이 필터를 실행하지 않음.
-     * - OPTIONS (CORS preflight)
-     * - 화이트리스트 패턴
-     */
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
-
-        // Preflight는 전부 통과
-        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
-            return true;
-        }
-
-        // 화이트리스트 패턴 매칭 시 통과
-        for (String pattern : WHITELIST) {
-            if (PATH_MATCHER.match(pattern, path)) {
-                return true;
-            }
-        }
-
-        return false;
+    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+            throws IOException, ServletException {
+        log.info("[AuthFilter] filtering uri={}", req.getRequestURI());
+        // ...
     }
 }
+
