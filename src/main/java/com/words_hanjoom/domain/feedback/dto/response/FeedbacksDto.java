@@ -2,13 +2,13 @@ package com.words_hanjoom.domain.feedback.dto.response;
 
 import java.util.List;
 
-public class FeedbackResponseDto {
+public class FeedbacksDto {
     private String articleBody;
     private List<FeedbackDto> feedbacks;
 
-    public FeedbackResponseDto() {}
+    public FeedbacksDto() {}
 
-    public FeedbackResponseDto(String articleBody, List<FeedbackDto> feedbacks) {
+    public FeedbacksDto(String articleBody, List<FeedbackDto> feedbacks) {
         this.articleBody = articleBody;
         this.feedbacks = feedbacks;
     }

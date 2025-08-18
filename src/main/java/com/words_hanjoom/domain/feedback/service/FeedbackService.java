@@ -5,7 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.words_hanjoom.domain.feedback.dto.request.ScrapActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbackDto;
-import com.words_hanjoom.domain.feedback.dto.response.FeedbackResponseDto;
+import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.entity.ActivityType;
 import com.words_hanjoom.domain.feedback.entity.Article;
 import com.words_hanjoom.domain.feedback.entity.Category;
@@ -49,7 +49,7 @@ public class FeedbackService {
         this.embeddingModel = embeddingModel;
     }
 
-    public FeedbackResponseDto feedbackScrapActivity(ScrapActivityDto activity) throws JsonProcessingException {
+    public FeedbacksDto feedbackScrapActivity(ScrapActivityDto activity) throws JsonProcessingException {
         Long userId = 1L;
         Optional<Article> optionalArticle = articleRepository.findById(activity.getArticleId());
         Article article = optionalArticle.orElseThrow(
@@ -96,7 +96,7 @@ public class FeedbackService {
             ScrapActivities saved = feedbackRepository.save(scrapActivities);
             System.out.println(saved.toString());
         }
-        return new FeedbackResponseDto(article.getContent(), feedbacks);
+        return new FeedbacksDto(article.getContent(), feedbacks);
     }
 
     private FeedbackDto compareTitle(String userTitle, String aiTitle, String aiFeedback) {
