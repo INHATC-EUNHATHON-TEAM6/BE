@@ -44,12 +44,12 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     @Override
     public Mono<SearchResponse> search(SearchRequest req) {
         // --- 필수/기본값 보정 ---
-        String q        = nz(req.q());
+        String q = nz(req.q());
         if (q == null) return Mono.empty(); // q 없으면 검색 안 함
 
-        String reqType  = (nz(req.reqType()) != null) ? req.reqType() : "json";
-        Integer start   = (req.start() != null) ? req.start() : 1;
-        Integer num     = (req.num() != null) ? req.num() : 10;
+        String reqType = (nz(req.reqType()) != null) ? req.reqType() : "json";
+        Integer start = (req.start() != null) ? req.start() : 1;
+        Integer num = (req.num() != null) ? req.num() : 10;
         String advanced = (nz(req.advanced()) != null) ? req.advanced() : "y";
 
         return dicWebClient.get()
@@ -66,18 +66,18 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                     qp(ub, "pos", req.pos());  // req.pos() == Optional<String>
 
                     // --- Optional<String> ---
-                    qp(ub, "method",     req.method());
-                    qp(ub, "target",     req.target());
-                    qp(ub, "type1",      req.type1());
-                    qp(ub, "type2",      req.type2());
-                    qp(ub, "cat",        req.cat());
+                    qp(ub, "method", req.method());
+                    qp(ub, "target", req.target());
+                    qp(ub, "type1", req.type1());
+                    qp(ub, "type2", req.type2());
+                    qp(ub, "cat", req.cat());
                     qp(ub, "multimedia", req.multimedia());
 
                     // --- Optional<Integer> (or Long) ---
                     qp(ub, "letter_s", req.letterS());
                     qp(ub, "letter_e", req.letterE());
-                    qp(ub, "update_s",   req.updateS());
-                    qp(ub, "update_e",   req.updateE());
+                    qp(ub, "update_s", req.updateS());
+                    qp(ub, "update_e", req.updateE());
 
                     return ub.build();
                 })
@@ -93,6 +93,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
     @Override
     public Mono<ViewResponse> view(long targetCode) {
+
         return dicWebClient.get()
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
@@ -108,125 +109,202 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
     @Override
     public Mono<DictEntry> quickLookup(String q) {
-        String qq = nz(q);
-        if (qq == null) return Mono.empty();
-        return searchFirst(qq, "exact").switchIfEmpty(searchFirst(qq, "include"));
+        // 내부에서 폴백 단계 전부 처리
+        return searchFirst(q);
     }
 
-    private Mono<DictEntry> searchFirst(String q, String method) {
-        String qq = nz(q);
-        if (qq == null) return Mono.empty();          // 공백 단어는 호출하지 않음
-
-        // (선택) 최종 URI 디버그 — 인코딩
+    // ===== 개별 호출 + 파싱 =====
+    private Mono<DictEntry> searchOnce(String submitQ, String scoreQ, String method, Integer target) {
+        // 디버그용 최종 URI
         String dbg = org.springframework.web.util.UriComponentsBuilder
                 .fromPath("/search.do")
-                .queryParam("key", "****" + apiKey.substring(Math.max(0, apiKey.length()-4)))
-                .queryParam("q", qq)
+                .queryParam("key", "****" + apiKey.substring(Math.max(0, apiKey.length() - 4)))
+                .queryParam("q", submitQ)
                 .queryParam("req_type", "json")
                 .queryParam("advanced", "y")
                 .queryParam("method", method)
+                .queryParam("target", target)
                 .build()
                 .encode(java.nio.charset.StandardCharsets.UTF_8)
                 .toUriString();
         log.debug("[DICT] FINAL URI {}", dbg);
 
         return dicWebClient.get()
-                .uri(b -> b.path("/search.do")
-                        .queryParam("key", apiKey)       // 검증 통과된 값만
-                        .queryParam("q", qq)             // ★ Optional 금지, 공백 금지
-                        .queryParam("req_type", "json")
-                        .queryParam("advanced", "y")
-                        .queryParam("method", method)    // "exact"/"include"
-                        .build())
+                .uri(b -> {
+                    var ub = b.path("/search.do")
+                            .queryParam("key", apiKey)
+                            .queryParam("q", submitQ)
+                            .queryParam("req_type", "json")
+                            .queryParam("advanced", "y")
+                            .queryParam("method", method);
+                    if (target != null) ub.queryParam("target", target);
+                    return ub.build();
+                })
                 .accept(MediaType.parseMediaType("text/json"))
                 .retrieve()
-                .onStatus(s -> s.isError(), resp ->
-                        resp.bodyToMono(String.class).defaultIfEmpty("")
-                                .flatMap(bd -> {
-                                    log.error("[DICT] searchFirst({}) HTTP {} body={}", method, resp.statusCode(), bd);
-                                    return Mono.error(new IllegalStateException("NIKL searchFirst error: " + resp.statusCode()));
-                                }))
                 .bodyToMono(String.class)
                 .timeout(Duration.ofSeconds(7))
-                .flatMap(body -> { /* 기존 파싱 로직 그대로 */
+                .flatMap(body -> {
                     try {
-                        JsonNode root = objectMapper.readTree(body);
-                        JsonNode itemArray = root.at("/channel/item");
-                        if (itemArray.isMissingNode() || !itemArray.isArray()) return Mono.empty();
+                        JsonNode root  = objectMapper.readTree(body);
+                        JsonNode items = root.at("/channel/item");
+                        if (items.isMissingNode() || items.isNull()) return Mono.empty();
 
-                        return Flux.fromIterable(itemArray)
-                                .filter(itemNode -> qq.equals(textOrNull(itemNode, "word")))
+                        Iterable<JsonNode> iterable = items.isArray() ? items : java.util.List.of(items);
+                        final String qNorm = normKey(scoreQ);
+
+                        return Flux.fromIterable(iterable)
+                                .sort((a, b) -> Integer.compare(
+                                        matchScore(b, qNorm), matchScore(a, qNorm)))
                                 .next()
                                 .flatMap(itemNode -> {
                                     JsonNode senseNode = itemNode.path("sense");
+                                    if (senseNode.isArray()) senseNode = senseNode.path(0);
                                     if (senseNode.isMissingNode() || senseNode.isNull()) return Mono.empty();
 
-                                    String lemma = textOrNull(itemNode, "word");
+                                    String lemma = textOrNull(itemNode, "word");        // 표제어(예: 노동조합법)
                                     String def   = textOrNull(senseNode, "definition");
                                     String type  = textOrNull(senseNode, "type");
-                                    byte supNo   = (byte) itemNode.path("sup_no").asInt(0);
-                                    long tc      = itemNode.path("target_code").asLong(0);
+                                    byte   supNo = (byte) itemNode.path("sup_no").asInt(0);
+                                    long   tcRaw = itemNode.path("target_code").asLong(0);
+                                    Long   targetCode = (tcRaw > 0) ? tcRaw : null;
+                                    String exampleFromSearch = textOrNull(senseNode, "example");
 
-                                    return fetchOneExample(tc)
-                                            .onErrorResume(e -> Mono.empty())
-                                            .map(ex -> new DictEntry(lemma, def, type, supNo, ex))
-                                            .switchIfEmpty(Mono.fromSupplier(() -> new DictEntry(lemma, def, type, supNo, null)));
+                                    return fetchFirstSenseInfo(tcRaw)
+                                            .defaultIfEmpty(new SenseInfo(exampleFromSearch, null))
+                                            .map(si -> {
+                                                String finalExample = (si.example() != null && !si.example().isBlank())
+                                                        ? si.example() : exampleFromSearch;
+                                                Short finalSenseNo = si.senseNo();
+                                                log.debug("[DICT] chose lemma={}, sup={}, tc={}, senseNo={}, via {}:{}",
+                                                        lemma, supNo, targetCode, finalSenseNo, method, target);
+                                                return new DictEntry(lemma, def, type, targetCode, supNo, finalExample, finalSenseNo);
+                                            });
                                 });
                     } catch (Exception e) {
-                        log.warn("[DICT] parse error(searchFirst {}): {}", method, e.toString(), e);
+                        log.warn("[DICT] parse error(searchOnce {}:{}): {}", method, target, e.toString(), e);
                         return Mono.empty();
                     }
                 })
                 .onErrorResume(e -> {
-                    log.warn("[DICT] searchFirst({}) pipeline error: {}", method, e.toString(), e);
+                    log.warn("[DICT] searchOnce {}:{} error: {}", method, target, e.toString(), e);
                     return Mono.empty();
                 });
     }
 
+    private Mono<DictEntry> searchFirst(String q) {
+        String qq = nz(q);
+        if (qq == null) return Mono.empty();
 
-    private Mono<String> fetchOneExample(long targetCode) {
+        // 와일드카드 후보들
+        String wcMid  = wildcardMiddle(qq);       // 기념*촬영
+        String wcPre  = "*" + qq;                 // *기념촬영
+        String wcSuf  = qq + "*";                 // 기념촬영*
+        String wcBoth = "*" + qq + "*";           // *기념촬영*
+
+        return searchOnce(qq, qq, "exact",   1)
+                .switchIfEmpty(searchOnce(qq, qq, "include", 1))
+                .switchIfEmpty(searchOnce(wcMid,  qq, "wildcard", 1))
+                .switchIfEmpty(searchOnce(wcPre,  qq, "wildcard", 1))
+                .switchIfEmpty(searchOnce(wcSuf,  qq, "wildcard", 1))
+                .switchIfEmpty(searchOnce(wcBoth, qq, "wildcard", 1))
+                // 정의(8)와 용례(9)도 털어보기 — 약칭/표기변형 회수용
+                .switchIfEmpty(searchOnce(qq, qq, "include", 8))
+                .switchIfEmpty(searchOnce(qq, qq, "include", 9))
+                // 최종 노히트 로깅
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.debug("[DICT] no hit for q='{}'", qq);
+                    return Mono.empty();
+                }));
+    }
+
+
+    private Mono<SenseInfo> fetchFirstSenseInfo(long targetCode) {
         if (targetCode <= 0) return Mono.empty();
 
         return dicWebClient.get()
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
+                        .queryParam("method", "target_code")
                         .queryParam("target_code", targetCode)
                         .build())
                 .accept(MediaType.parseMediaType("text/json"))
                 .retrieve()
                 .bodyToMono(String.class)
-                .switchIfEmpty(Mono.empty()) // ✅ 수정: 빈 응답일 경우 NullPointerException 방지
+                .switchIfEmpty(Mono.empty())
                 .onErrorResume(e -> {
                     log.warn("[DICT] bodyToMono error(view): {}", e.toString());
                     return Mono.empty();
                 })
                 .flatMap(body -> {
                     try {
+                        // ▶ 디버그: 원문 확인(너무 길면 자름)
+                        if (log.isDebugEnabled()) {
+                            String trimmed = body.length() > 2000 ? body.substring(0, 2000) + " …(truncated)" : body;
+                            log.debug("[DICT] view raw for {} :: {}", targetCode, trimmed);
+                        }
+
                         JsonNode root = objectMapper.readTree(body);
-                        JsonNode itemNode = root.at("/channel/item/0");
+                        JsonNode item = root.path("channel").path("item");
+                        if (item.isMissingNode() || item.isNull()) return Mono.empty();
+                        if (item.isArray()) item = item.path(0);           // item이 배열이면 첫번째
 
-                        // ✅ 수정: item 노드가 유효하지 않으면 Mono.empty() 반환
-                        if (itemNode.isMissingNode() || itemNode.isNull()) {
-                            return Mono.empty();
-                        }
+                        // sense는 단일/배열 모두 처리
+                        JsonNode sense = item.path("sense");
+                        if (sense.isArray()) sense = sense.path(0);
 
-                        JsonNode senseNode = itemNode.path("sense");
-                        if (senseNode.isMissingNode() || senseNode.isNull()) {
-                            return Mono.empty();
-                        }
+                        // 예문 후보들 스캔
+                        String example =
+                                textOrNull(sense, "example")
+                                ; if (isBlank(example)) example = textOrNull(sense.path("examples").path(0), "example");
+                        if (isBlank(example)) example = textOrNull(sense.path("example_list").path(0), "text");
+                        if (isBlank(example)) example = textOrNull(sense.path("sense_example").path(0), "example");
 
-                        String ex = textOrNull(senseNode, "example");
-                        if (isBlank(ex)) ex = textOrNull(senseNode.path("examples").path(0), "example");
-                        if (isBlank(ex)) ex = textOrNull(senseNode.path("example_list").path(0), "text");
-                        if (isBlank(ex)) ex = textOrNull(senseNode.path("sense_example").path(0), "example");
+                        // sense_no 여러 경로에서 탐색
+                        String senseNoStr =
+                                textOrNull(sense, "sense_no");
+                        if (isBlank(senseNoStr)) senseNoStr = textOrNull(sense, "sense_order");
+                        if (isBlank(senseNoStr)) senseNoStr = findFirstByKeys(item, "sense_no", "sense_order"); // 🔁 백업: item 하위 전체 탐색
 
-                        return isBlank(ex) ? Mono.empty() : Mono.just(ex);
+                        Short senseNo = toShortOrNull(senseNoStr);
+
+                        log.debug("[DICT] view parsed tc={}, senseNo={}, exEmpty={}", targetCode, senseNo, isBlank(example));
+                        return Mono.just(new SenseInfo(example, senseNo));
                     } catch (Exception e) {
-                        log.warn("[DICT] example parse error: {}", e.toString());
+                        log.warn("[DICT] view parse error: {}", e.toString());
                         return Mono.empty();
                     }
                 });
+    }
+
+    private static String findFirstByKeys(JsonNode node, String... keys) {
+        if (node == null || node.isMissingNode() || node.isNull()) return null;
+        for (String k : keys) {
+            JsonNode n = node.get(k);
+            if (n != null && !n.isMissingNode() && !n.isNull()) {
+                String v = n.asText(null);
+                if (v != null && !v.isBlank()) return v;
+            }
+        }
+        // 자식 재귀 탐색
+        var fields = node.fields();
+        while (fields.hasNext()) {
+            var e = fields.next();
+            String v = findFirstByKeys(e.getValue(), keys);
+            if (v != null && !v.isBlank()) return v;
+        }
+        // 배열 재귀 탐색
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                String v = findFirstByKeys(child, keys);
+                if (v != null && !v.isBlank()) return v;
+            }
+        }
+        return null;
+    }
+
+    private record SenseInfo(String example, Short senseNo) {
     }
 
     private <T> T read(String body, Class<T> type) {
@@ -264,4 +342,36 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         opt.filter(v -> !(v instanceof String s) || !s.isBlank()) // String일 경우 공백 필터
                 .ifPresent(v -> ub.queryParam(name, v));               // queryParam은 Object 받아서 Integer도 OK
     }
+
+    private static Short toShortOrNull(String s) {
+        if (s == null || s.isBlank()) return null;
+        try { return Short.valueOf(s.trim()); } catch (NumberFormatException e) { return null; }
+    }
+
+    // (1) 유틸: 공백/정규화
+    private static String normKey(String s) {
+        if (s == null) return null;
+        return java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC)
+                .replaceAll("\\s+", "");
+    }
+
+    // (2) 유틸: 매칭 점수 (3>2>1)
+    private static int matchScore(JsonNode itemNode, String qNorm) {
+        String w = textOrNull(itemNode, "word");
+        if (w == null || qNorm == null) return 0;
+        String wn = normKey(w);
+        if (wn.equals(qNorm)) return 3;                           // 완전(공백무시) 일치
+        if (wn.contains(qNorm) || qNorm.contains(wn)) return 2;   // 포함/시작·끝 일치
+        return 1;
+    }
+
+    // (3) 유틸: 와일드카드 패턴 (띄어쓰기/하이픈 대비)
+    private static String wildcardMiddle(String q) {
+        if (q == null) return null;
+        String qq = q.trim();
+        if (qq.length() <= 1) return qq + "*";
+        int mid = qq.length() / 2;
+        return qq.substring(0, mid) + "*" + qq.substring(mid);    // 기념*촬영
+    }
+
 }

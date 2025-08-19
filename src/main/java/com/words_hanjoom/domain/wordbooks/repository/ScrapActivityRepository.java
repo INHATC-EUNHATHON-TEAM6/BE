@@ -11,17 +11,13 @@ import java.util.List;
 @Repository
 public interface ScrapActivityRepository extends JpaRepository<ScrapActivity, Long> {
 
-    List<ScrapActivity> findByComparisonType(ScrapActivity.ComparisonType comparisonType);
-
-    List<ScrapActivity> findByComparisonTypeAndUserAnswerIsNotNull(
-            ScrapActivity.ComparisonType comparisonType
-    );
-
+    // UNKNOWN_WORD 중에서 ai_answer/ai_feedback 이 모두 채워진 건만 수집
     @Query(value = """
-        select * 
-        from scrap_activities
-        where comparison_type = :type
-          and user_answer is not null
+        SELECT * FROM scrap_activities
+        WHERE comparison_type = :type
+          AND ai_answer   IS NOT NULL AND ai_answer   <> ''
+          AND ai_feedback IS NOT NULL AND ai_feedback <> ''
+        ORDER BY scrap_id
         """, nativeQuery = true)
     List<ScrapActivity> findUnknownsNative(@Param("type") String type);
 }
