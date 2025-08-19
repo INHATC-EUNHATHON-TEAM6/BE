@@ -6,6 +6,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ArticleRepository extends JpaRepository<Article, Long> {
-    // 특정 URL을 가진 기사가 존재하는지 확인하는 메서드
-    boolean existsByArticleUrl(String articleUrl);
+    // 특정 Url을 가진 Article이 존재하는지 확인하는 메소드
+    boolean existsByArticleUrl(String url);
 }

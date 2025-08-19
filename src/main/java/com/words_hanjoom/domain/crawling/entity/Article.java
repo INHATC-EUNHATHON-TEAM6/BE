@@ -4,8 +4,6 @@ package com.words_hanjoom.domain.crawling.entity;
 import jakarta.persistence.*;
 import lombok.Builder;
 import lombok.Getter;
-
-import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Entity

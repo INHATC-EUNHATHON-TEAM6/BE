@@ -21,8 +21,8 @@ public class CrawlScheduler {
             "경제", "복지", "금융", "산업", "사회", "문화"
     );
 
-    /** 매시간 정각(Asia/Seoul) 실행 */
-    //@Scheduled(cron = "0 * * * * *", zone = "Asia/Seoul") // 필요에 따라 주석 해제
+    /** 매일 09:00, 18:00 실행 (Asia/Seoul) */
+    @Scheduled(cron = "0 0 9,18 * * *", zone = "Asia/Seoul")
     public void runHourly() {
         categoriesToCrawl.forEach(category -> {
             try {

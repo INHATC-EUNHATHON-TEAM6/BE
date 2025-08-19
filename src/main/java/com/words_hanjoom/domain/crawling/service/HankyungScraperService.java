@@ -39,7 +39,6 @@ public class HankyungScraperService {
             "문화", Map.of("field", "culture", "subFields", new String[]{})
     );
 
-    @Transactional
     public CrawlResult scrapeHankyung(String fieldName) throws IOException {
         int savedCount = 0;
         List<SectionRequest> allArticleLinks = new ArrayList<>();
@@ -60,6 +59,8 @@ public class HankyungScraperService {
             for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
                 String paginatedUrl = sectionUrl + "?page=" + pageNo;
                 System.out.printf("크롤링 시작: %s, 페이지: %d\n", paginatedUrl, pageNo);
+
+                //todo:  이미 파싱했던 기사가 있는 페이지는 긁지 않기
 
                 try {
                     allArticleLinks.addAll(CategoryCrawl(paginatedUrl, fieldName));
@@ -99,7 +100,7 @@ public class HankyungScraperService {
     // 카테고리 내의 기사들 URL 크롤링
     public List<SectionRequest> CategoryCrawl(String sectionUrl, String fieldName) throws IOException {
         List<SectionRequest> articleList = new ArrayList<>();   // 카테고리 기사들 링크 list화
-        Long categoryId = categoryRepository.findCategoryIdByCategoryName(fieldName).get().getCategoryId();   // 카테고리 이름으로 DB에서 카테고리 ID 조회
+        Long categoryId = categoryRepository.findCategoryIdByCategoryName(fieldName);   // 카테고리 이름으로 DB에서 카테고리 ID 조회
         Document doc = Jsoup.connect(sectionUrl).get(); // Jsoup에 url 적용
         Elements newsItems = doc.select("ul.news-list div.news-item");  // 기사 목록 추출
 
@@ -119,11 +120,13 @@ public class HankyungScraperService {
         return articleList;
     }
 
-
-    private int NewsCrawl(List<SectionRequest> sectionRequests) throws IOException {
+    @Transactional
+    public int NewsCrawl(List<SectionRequest> sectionRequests) throws IOException {
         int savedCount = 0; // 저장된 기사 수를 셀 변수
 
+        // 저장한 분야별 기사 리스트
         for (SectionRequest sectionRequest : sectionRequests) {
+            // 기사 리스트에서 URL 추출
             String articleUrl = sectionRequest.getUrl();
 
             if (!articleUrl.startsWith("http")) {
@@ -132,6 +135,7 @@ public class HankyungScraperService {
 
             if (articleRepository.existsByArticleUrl(articleUrl)) {
                 System.out.println("중복된 기사: " + articleUrl);
+                // 중복된 기사가 10개 이상 반복될 경우 이 데이터셋을 넘기고 다음 분야로 크롤링 데이터를 pass하는게 좋을지?
                 continue;
             }
 
