@@ -23,12 +23,9 @@ public class SearchResponse {
     public static class Item {
         @JsonProperty("sup_no")
         private String supNo;
-
         private String word;
-
         @JsonProperty("target_code")
         private String targetCode;
-
         private String pos;
         private Sense sense;
     }

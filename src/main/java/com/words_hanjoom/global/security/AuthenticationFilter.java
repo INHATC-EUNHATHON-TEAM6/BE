@@ -26,8 +26,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
             "/api/auth/**",
             "/api/wordbooks/dict/**",   // ← 여기 포함
             "/api/words/**",             // 테스트 중이면 공개
-            "/api/scraps/**",
-            "/api/dev/**"
+            "/api/scraps/**"
     );
 
     @Override

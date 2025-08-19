@@ -34,8 +34,7 @@ public class SecurityConfig {
                                 "/api/auth/**",
                                 "/api/wordbooks/dict/**",
                                 "/api/words/**",
-                                "/api/scraps/**",
-                                "/api/dev/**"
+                                "/api/scraps/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
