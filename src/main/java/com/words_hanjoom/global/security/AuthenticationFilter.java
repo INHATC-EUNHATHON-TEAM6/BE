@@ -25,15 +25,18 @@ public class AuthenticationFilter extends OncePerRequestFilter {
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/**",
             "/api/wordbooks/dict/**",   // ← 여기 포함
-            "/api/dev/nikl/**",
-            "/api/words/**"             // 테스트 중이면 공개
+            "/api/words/**",             // 테스트 중이면 공개
+            "/api/scraps/**",
+            "/api/dev/**"
     );
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        boolean skip = PUBLIC_PATHS.stream().anyMatch(p -> MATCHER.match(p, request.getRequestURI()));
-        log.info("[AuthFilter] shouldNotFilter uri={} skip={}", request.getRequestURI(), skip);
-        return skip;
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String uri = request.getRequestURI();
+        // ★ 테스트용 엔드포인트는 무조건 필터 제외
+        if (uri.startsWith("/api/dev/")) return true;
+        // 기존 로직 유지
+        return super.shouldNotFilter(request);
     }
 
     @Override
@@ -41,6 +44,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
             throws IOException, ServletException {
         log.info("[AuthFilter] filtering uri={}", req.getRequestURI());
         // ...
+        chain.doFilter(req, res);
     }
 }
 

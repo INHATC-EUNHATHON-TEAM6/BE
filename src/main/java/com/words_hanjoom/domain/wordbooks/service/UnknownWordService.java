@@ -2,139 +2,67 @@ package com.words_hanjoom.domain.wordbooks.service;
 
 import com.words_hanjoom.domain.wordbooks.entity.*;
 import com.words_hanjoom.domain.wordbooks.repository.*;
-import com.words_hanjoom.infra.dictionary.NiklDictionaryClient;
+import com.words_hanjoom.domain.wordbooks.service.WordImportService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import jakarta.annotation.PostConstruct;
-
 
 @Service
 @RequiredArgsConstructor
 public class UnknownWordService {
 
-    private static final int LEN_WORD_NAME = 100;
-    private static final int LEN_SYNONYM   = 100;
-    private static final int LEN_ANTONYM   = 100;
-    private static final int LEN_CATEGORY  = 30;
-    private static final int LEN_EXAMPLE   = 2000;
-    private static final int LEN_DEF       = 4000;
-    private static final String DELIM = ",";
-
-    private final WordRepository wordRepository;
     private final WordbookRepository wordbookRepository;
-    private final WordbookWordRepository wordbookWordRepository;
-    private final AnswerComparisonRepository comparisonRepository;
+    private final ScrapActivityRepository scrapRepo;
+    private final WordImportService wordImportService; // ← per-word 저장 서비스
 
-    private final NiklDictionaryClient dictClient;
-
-    @Transactional
-    public Result processCsv(Long userId, String csv) {
-        return saveAll(userId, parseCsv(csv));
-    }
+    private static final Pattern TOKEN_SEP   = Pattern.compile("[,，;；/／·・|]+");
+    private static final Pattern TOKEN_PAREN = Pattern.compile("[(\\[].*?[)\\]]");
 
     @Transactional
-    public Result processFromComparison(Long comparisonId) {
-        ScrapActivity ac = comparisonRepository.findById(comparisonId)
-                .orElseThrow(() -> new NoSuchElementException("comparison not found: " + comparisonId));
-        if (ac.getComparisonType() != ScrapActivity.ComparisonType.UNKNOWN_WORD) {
-            throw new IllegalArgumentException("comparison_type must be UNKNOWN_WORD");
-        }
-        return saveAll(ac.getUserId(), parseCsv(ac.getUserAnswer()));
-    }
-
-    // ===== 내부 파이프라인 =====
     public Result saveAll(Long userId, List<String> tokens) {
-        // B안: 엔티티 get-or-create
         Wordbook wordbook = wordbookRepository.getOrCreateEntity(userId);
-
         List<SavedWord> saved = new ArrayList<>();
 
         for (String raw : tokens) {
-            final String surface  = normalizeKo(raw);
-            final String lemma    = dictClient.findLemma(surface).orElse(surface);
-            final String wordName = cut(lemma, LEN_WORD_NAME);
-
-            var lexOpt     = dictClient.lookup(wordName);
-
-            var synonyms   = lexOpt.map(NiklDictionaryClient.Lexeme::synonyms).orElseGet(java.util.List::of);
-            var antonyms   = lexOpt.map(NiklDictionaryClient.Lexeme::antonyms).orElseGet(java.util.List::of);
-            var definition = cut(lexOpt.map(NiklDictionaryClient.Lexeme::definition).orElse(""), LEN_DEF);
-            var categories = lexOpt.map(NiklDictionaryClient.Lexeme::categories).orElseGet(java.util.List::of);
-            var example    = lexOpt.map(NiklDictionaryClient.Lexeme::example).orElseGet(java.util.List::of); // ← 여기
-
-            var shoulderNo = lexOpt.map(NiklDictionaryClient.Lexeme::shoulderNo).orElse((byte) 0);
-
-            final String synonymStr  = cut(joinAndLimitEach(dedup(synonyms), DELIM, LEN_SYNONYM), LEN_WORD_NAME);
-            final String antonymStr  = cut(joinAndLimitEach(dedup(antonyms), DELIM, LEN_ANTONYM), LEN_WORD_NAME);
-            final String categoryStr = cut(joinAndLimitEach(dedup(categories), DELIM, LEN_CATEGORY), LEN_WORD_NAME);
-            final String exampleStr  = cut(joinAndLimitEach(dedup(example), DELIM, LEN_EXAMPLE), LEN_WORD_NAME);
-
-            // words upsert/find
-            Word word = wordRepository.findByWordName(wordName).orElseGet(() -> {
-                try {
-                    return wordRepository.save(Word.builder()
-                            .wordName(wordName)
-                            .synonym(synonymStr)
-                            .antonym(antonymStr)
-                            .definition(definition)
-                            .wordCategory(categoryStr)
-                            .shoulderNo(shoulderNo)
-                            .example(exampleStr)
-                            .build());
-                } catch (DataIntegrityViolationException e) {
-                    return wordRepository.findByWordName(wordName).orElseThrow(() -> e);
-                }
-            });
-
-            boolean needUpdate = false;
-            if (!Objects.equals(safe(word.getSynonym()), synonymStr))      { word.setSynonym(synonymStr); needUpdate = true; }
-            if (!Objects.equals(safe(word.getAntonym()), antonymStr))       { word.setAntonym(antonymStr); needUpdate = true; }
-            if (!Objects.equals(safe(word.getDefinition()), definition))    { word.setDefinition(definition); needUpdate = true; }
-            if (!Objects.equals(safe(word.getWordCategory()), categoryStr)) { word.setWordCategory(categoryStr); needUpdate = true; }
-            if (!Objects.equals(safe(word.getExample()), exampleStr))          { word.setExample(exampleStr); needUpdate = true; }
-            if (!Objects.equals(word.getShoulderNo(), shoulderNo))          { word.setShoulderNo(shoulderNo); needUpdate = true; }
-            if (needUpdate) wordRepository.save(word);
-
-            // 단어장-단어 매핑
-            WordbookWordId id = new WordbookWordId(wordbook.getWordbookId(), word.getWordId());
-            if (!wordbookWordRepository.existsById(id)) {
-                wordbookWordRepository.save(WordbookWord.builder().id(id).build());
-            }
-
-            saved.add(new SavedWord(surface, wordName, word.getWordId()));
+            // ⬇️ Wordbook 대신 userId 전달
+            wordImportService.saveOne(userId, raw)
+                    .ifPresent(saved::add);
         }
 
         return new Result(wordbook.getWordbookId(), saved);
     }
 
-    // ===== 유틸 =====
-    private List<String> parseCsv(String csv) {
-        if (csv == null || csv.isBlank()) return List.of();
-        return Arrays.stream(csv.split("[,，;；/／·・\\s]+"))
-                .map(String::trim).filter(s -> !s.isEmpty()).distinct().collect(Collectors.toList());
+    @Transactional
+    public Result processCsv(Long userId, String csv) {
+        return saveAll(userId, tokenizeUnknownWords(csv));
     }
-    private String normalizeKo(String s) {
-        String trimmed = s.replaceAll("\\s+", "");
-        return Normalizer.normalize(trimmed, Normalizer.Form.NFKC);
-    }
-    private static String safe(String s) { return s == null ? "" : s; }
-    private String cut(String s, int max) { return (s == null) ? "" : (s.length() <= max ? s : s.substring(0, max)); }
-    private String joinAndLimitEach(List<String> list, String delim, int eachMax) {
-        if (list == null || list.isEmpty()) return "";
-        return list.stream().filter(Objects::nonNull).map(String::trim).filter(v -> !v.isEmpty())
-                .map(v -> v.length() > eachMax ? v.substring(0, eachMax) : v)
-                .collect(Collectors.joining(delim));
-    }
-    private <T> List<T> dedup(List<T> in) { return (in == null || in.isEmpty()) ? List.of() : new ArrayList<>(new LinkedHashSet<>(in)); }
 
-    // DTO
+    @Transactional
+    public Result processFromComparison(Long comparisonId) {
+        ScrapActivity ac = scrapRepo.findById(comparisonId)
+                .orElseThrow(() -> new NoSuchElementException("comparison not found: " + comparisonId));
+        if (ac.getComparisonType() != ScrapActivity.ComparisonType.UNKNOWN_WORD) {
+            throw new IllegalArgumentException("comparison_type must be UNKNOWN_WORD");
+        }
+        return saveAll(ac.getUserId(), tokenizeUnknownWords(ac.getUserAnswer()));
+    }
+
+    private List<String> tokenizeUnknownWords(String text) {
+        if (text == null || text.isBlank()) return List.of();
+        String noParen = TOKEN_PAREN.matcher(text).replaceAll("");
+        return Arrays.stream(TOKEN_SEP.split(noParen))
+                .map(s -> s.replaceAll("\\s+", ""))
+                .filter(s -> !s.isBlank())
+                .map(s -> Normalizer.normalize(s, Normalizer.Form.NFKC))
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
     public record SavedWord(String surface, String wordName, Long wordId) {}
     public record Result(Long wordbookId, List<SavedWord> words) {}
 }

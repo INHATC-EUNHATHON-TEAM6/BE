@@ -7,11 +7,17 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-@Entity @Table(name = "scrap_activities")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Entity
+@Table(name = "scrap_activities")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ScrapActivity {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "scrap_id")
     private Long scrapId;
 
@@ -29,6 +35,7 @@ public class ScrapActivity {
     )
     private ComparisonType comparisonType;
 
+    // ← 여기에 "모르는 어휘" CSV가 들어옴 (THOUGHT_SUMMARY 케이스)
     @Column(name = "user_answer", columnDefinition = "TEXT", nullable = false)
     private String userAnswer;
 

@@ -2,6 +2,7 @@ package com.words_hanjoom.global.config;
 import com.words_hanjoom.global.security.AuthenticationFilter;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -9,8 +10,6 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-
-import java.util.Locale;
 
 @Configuration
 @EnableWebSecurity
@@ -34,13 +33,24 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/api/wordbooks/dict/**",
-                                "/api/dev/nikl/**",
-                                "/api/words/**"
+                                "/api/words/**",
+                                "/api/scraps/**",
+                                "/api/dev/**"
                         ).permitAll()
                         .anyRequest().authenticated()
+                )
+                .addFilterBefore(
+                        authenticationFilter,
+                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class
                 );
-        // .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class); // ⛔ 잠시 주석
 
         return http.build();
+    }
+
+    @Bean
+    public FilterRegistrationBean<AuthenticationFilter> authenticationFilterRegistration(AuthenticationFilter f) {
+        FilterRegistrationBean<AuthenticationFilter> reg = new FilterRegistrationBean<>(f);
+        reg.setEnabled(false); // ✅ 서블릿 체인 자동 등록 막고, Security 체인에서만 돌게 함
+        return reg;
     }
 }

@@ -1,3 +1,5 @@
+package com.words_hanjoom.domain.wordbooks.controller;
+
 import com.words_hanjoom.domain.wordbooks.service.WordImportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,9 +16,10 @@ public class WordImportController {
 
     private final WordImportService importService;
 
-    @PostMapping
-    public Map<String, Object> importWords(@RequestParam String q) {
-        int count = importService.importBySurface(q);
+    @PostMapping("/import")
+    public Map<String, Object> importWords(@RequestParam Long userId,
+                                           @RequestParam String q) {
+        int count = importService.importBySurface(userId, q);
         return Map.of("imported", count);
     }
 }

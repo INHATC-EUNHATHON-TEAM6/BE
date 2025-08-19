@@ -24,12 +24,13 @@ public class DictionaryController {
             @RequestParam(defaultValue = "json") String req_type,
             @RequestParam(defaultValue = "1") int start,
             @RequestParam(defaultValue = "10") int num,
-            @RequestParam(defaultValue = "n") String advanced,
+            @RequestParam(defaultValue = "y") String advanced,
+            @RequestParam(defaultValue = "exact") String method,
             @RequestParam(defaultValue = "false") boolean detail
     ) {
         var req = new SearchRequest(
                 q, req_type, start, num, advanced,
-                Optional.empty(), Optional.empty(),
+                Optional.of(method), Optional.empty(),
                 Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty(),

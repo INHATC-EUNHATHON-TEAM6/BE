@@ -1,29 +1,52 @@
 package com.words_hanjoom.domain.wordbooks.controller;
 
+import com.words_hanjoom.domain.wordbooks.service.ScrapIngestService;
 import com.words_hanjoom.domain.wordbooks.service.UnknownWordService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/words")
+@RequestMapping("/api/words")
 @RequiredArgsConstructor
 public class UnknownWordController {
 
-    @Qualifier("niklDictionaryClientImpl")
     private final UnknownWordService unknownWordService;
+    private final ScrapIngestService scrapIngestService;
 
-
-    // 단어 저장 테스트
-    @PostMapping("/save")
-    public ResponseEntity<String> saveWord(
+    /**
+     * JSON 배열: ["실수","사과","반성"]
+     */
+    @PostMapping(
+            value = "/save",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<UnknownWordService.Result> saveWord(
             @RequestParam Long userId,
             @RequestBody List<String> tokens
     ) {
-        unknownWordService.saveAll(userId, tokens);
-        return ResponseEntity.ok("Saved successfully");
+        if (tokens == null || tokens.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(unknownWordService.saveAll(userId, tokens));
+    }
+
+    /**
+     * CSV 문자열: "실수, 사과, 반성"
+     */
+    @PostMapping(
+            value = "/save-csv",
+            consumes = MediaType.TEXT_PLAIN_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<UnknownWordService.Result> saveWordCsv(
+            @RequestParam Long userId,
+            @RequestBody String csv
+    ) {
+        return ResponseEntity.ok(unknownWordService.processCsv(userId, csv));
     }
 }

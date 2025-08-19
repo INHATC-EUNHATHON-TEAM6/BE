@@ -14,21 +14,22 @@ import org.springframework.beans.factory.annotation.Value;
 @Configuration
 public class DictionaryClientConfig {
 
-    @Value("${nikl.base-url}")
-    private String baseUrl;
-
     @Bean("dicWebClient")
-    public WebClient dicWebClient(ObjectMapper mapper) {
-        MediaType TEXT_JSON = new MediaType("text", "json");
-
-        return WebClient.builder()
-                .baseUrl(baseUrl)
+    public WebClient dicWebClient(WebClient.Builder builder) {
+        ExchangeStrategies strategies = ExchangeStrategies.builder()
                 .codecs(c -> {
+                    ObjectMapper om = new ObjectMapper();
                     c.defaultCodecs().jackson2JsonDecoder(
-                            new Jackson2JsonDecoder(mapper, MediaType.APPLICATION_JSON, TEXT_JSON));
+                            new Jackson2JsonDecoder(om, MediaType.valueOf("text/json")));
                     c.defaultCodecs().jackson2JsonEncoder(
-                            new Jackson2JsonEncoder(mapper, MediaType.APPLICATION_JSON, TEXT_JSON));
+                            new Jackson2JsonEncoder(om, MediaType.valueOf("text/json")));
                 })
+                .build();
+
+        return builder
+                .baseUrl("https://stdict.korean.go.kr/api") // 표준국어대사전 사용 시
+                .exchangeStrategies(strategies)
+                .defaultHeader(HttpHeaders.ACCEPT, "text/json;charset=UTF-8")
                 .build();
     }
 }
