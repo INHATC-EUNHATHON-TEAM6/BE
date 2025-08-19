@@ -58,9 +58,15 @@ public class HankyungScraperService {
 
             for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
                 String paginatedUrl = sectionUrl + "?page=" + pageNo;
-                System.out.printf("크롤링 시작: %s, 페이지: %d\n", paginatedUrl, pageNo);
+                List<SectionRequest> links = CategoryCrawl(paginatedUrl, fieldName);
 
-                //todo:  이미 파싱했던 기사가 있는 페이지는 긁지 않기
+                if (links.isEmpty()) {
+                    // CategoryCrawl에서 첫 기사 중복 → 이 섹션 종료
+                    System.out.printf("섹션 조기 종료: %s (page=%d)\n", sectionUrl, pageNo);
+                    break;
+                }
+
+                System.out.printf("크롤링 시작: %s, 페이지: %d\n", paginatedUrl, pageNo);
 
                 try {
                     allArticleLinks.addAll(CategoryCrawl(paginatedUrl, fieldName));
@@ -104,14 +110,34 @@ public class HankyungScraperService {
         Document doc = Jsoup.connect(sectionUrl).get(); // Jsoup에 url 적용
         Elements newsItems = doc.select("ul.news-list div.news-item");  // 기사 목록 추출
 
-        // 각 기사에 대해 URL과 제목 추출
+        if (newsItems.isEmpty()) {
+            return articleList; // 빈 페이지
+        }
+
+        // 1) 첫 번째 기사 URL 추출 및 정규화
+        Element firstItem = newsItems.first();
+        Element firstAnchor = (firstItem != null) ? firstItem.selectFirst("h2.news-tit a[href]") : null;
+        if (firstAnchor == null) {
+            return articleList; // 기사 구조가 다르면 안전하게 스킵
+        }
+        String firstUrl = firstAnchor.attr("href");
+
+        // 2) 이미 저장된 기사면 이 페이지 스킵
+        if (articleRepository.existsByArticleUrl(firstUrl)) {
+            System.out.printf("첫 기사 이미 저장됨. 페이지 스킵: %s (firstUrl=%s)\n", sectionUrl, firstUrl);
+            return articleList; // 빈 리스트 반환 → 호출부에서 이 페이지는 넘어감
+        }
+
+        // 3) 저장되지 않은 페이지면 전체 기사 링크 수집
         for (Element item : newsItems) {
+            Element a = item.selectFirst("h2.news-tit a[href]");
+            if (a == null) continue;
+
             // sectionRequest 객체 생성
             SectionRequest sectionRequest = new SectionRequest();
-
             // sectionRequest에 카테고리 ID, URL 설정
             sectionRequest.setCategoryId(categoryId);
-            sectionRequest.setUrl(item.selectFirst("h2.news-tit a[href]").attr("href"));
+            sectionRequest.setUrl(a.attr("href"));
 
             // 기사정보들 list 추가
             articleList.add(sectionRequest);
