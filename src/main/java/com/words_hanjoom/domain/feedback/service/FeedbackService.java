@@ -24,8 +24,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-import static com.words_hanjoom.domain.feedback.service.FeedbackServicePromptTemplate.SCRAP_FEEDBACK_SYSTEM_PROMPT;
-import static com.words_hanjoom.domain.feedback.service.FeedbackServicePromptTemplate.SCRAP_FEEDBACK_USER_PROMPT;
+import static com.words_hanjoom.domain.feedback.service.FeedbackServicePromptTemplate.*;
 
 @Service
 @Transactional
@@ -57,33 +56,60 @@ public class FeedbackService {
                 () -> new IllegalArgumentException("해당 Article 없음")
         );
         List<FeedbackDto> feedbacks = new ArrayList<>();
-        Map<String, Object> requests = requestFeedbackByAI(activity, article);
-        Map<String, Object> aiFeedbacks = (Map<String, Object>)requests.get("feedbacks");
+        Category category = new Category(article.getArticleId());
+        Map<String, Object> firstRequest = requestFeedbackByAI(
+                Map.of(
+                        "title", article.getTitle(),
+                        "category", category.getCategoryName(),
+                        "content", article.getContent()
+                ),
+                Map.of(
+                        "keywords", activity.getKeywords(),
+                        "title", activity.getTitle(),
+                        "category", activity.getCategory(),
+                        "summary", activity.getSummary()
+                ),
+                FIRST_SCRAP_FEEDBACK_SYSTEM_PROMPT,
+                FIRST_SCRAP_FEEDBACK_USER_PROMPT
+        );
+        Map<String, Object> secondRequest = requestFeedbackByAI(
+                Map.of(
+                        "title", article.getTitle(),
+                        "category", category.getCategoryName(),
+                        "content", article.getContent()
+                ),
+                Map.of(
+                        "comment", activity.getComment()
+                ),
+                SECOND_SCRAP_FEEDBACK_SYSTEM_PROMPT,
+                SECOND_SCRAP_FEEDBACK_USER_PROMPT
+        );
+        Map<String, Object> aiFeedbacks = (Map<String, Object>)firstRequest.get("feedbacks");
         feedbacks.add(compareCategory(
                 activity.getCategory(),
-                (String)requests.get("category"),
+                (String)firstRequest.get("category"),
                 (String)aiFeedbacks.get("category"))
         );
         feedbacks.add(compareTitle(
                 activity.getTitle(),
-                (String)requests.get("title"),
+                (String)firstRequest.get("title"),
                 (String)aiFeedbacks.get("title"))
         );
         feedbacks.add(compareKeywords(
                 activity.getKeywords(),
-                (List<String>)requests.get("keywords"),
+                (List<String>)firstRequest.get("keywords"),
                 (String)aiFeedbacks.get("keywords"))
         );
         feedbacks.add(getWordsToLearn(activity.getVocabularies()));
         feedbacks.add(compareSummary(
                 activity.getSummary(),
-                (String)requests.get("summary"),
+                (String)firstRequest.get("summary"),
                 (String)aiFeedbacks.get("summary"))
         );
         feedbacks.add(checkUserComment(
                 activity.getComment(),
-                (String)requests.get("tendency"),
-                (String)aiFeedbacks.get("comment"))
+                (String)secondRequest.get("tendency"),
+                (String)secondRequest.get("feedback"))
         );
         for (FeedbackDto tmp : feedbacks) {
             ScrapActivities scrapActivities = new ScrapActivities();
@@ -141,22 +167,13 @@ public class FeedbackService {
         return new FeedbackDto(ActivityType.THOUGHT_SUMMARY, userComment, "", aiFeedback, tendency);
     }
 
-    private Map<String, Object> requestFeedbackByAI(ScrapActivityDto activity, Article article) throws JsonProcessingException {
-        PromptTemplate scrapFeedbackSystemPromptTemplate = new PromptTemplate(SCRAP_FEEDBACK_SYSTEM_PROMPT);
-        PromptTemplate scrapFeedbackUserPromptTemplate = new PromptTemplate(SCRAP_FEEDBACK_USER_PROMPT);
-        Category category = new Category(article.getArticleId());
-        Map<String, Object> systemPromptValues = Map.of(
-                "title", article.getTitle(),
-                "content", article.getContent(),
-                "category", category.getCategoryName()
-        );
-        Map<String, Object> userPromptValues = Map.of(
-                "title", activity.getTitle(),
-                "summary", activity.getSummary(),
-                "category", activity.getCategory(),
-                "keywords", activity.getKeywords(),
-                "comment", activity.getComment()
-        );
+    private Map<String, Object> requestFeedbackByAI(
+            Map<String, Object> systemPromptValues,
+            Map<String, Object> userPromptValues,
+            String systemPromptTemplate,
+            String userPromptTemplate) throws JsonProcessingException {
+        PromptTemplate scrapFeedbackSystemPromptTemplate = new PromptTemplate(systemPromptTemplate);
+        PromptTemplate scrapFeedbackUserPromptTemplate = new PromptTemplate(userPromptTemplate);
         String systemPrompt = scrapFeedbackSystemPromptTemplate.render(systemPromptValues);
         String userPrompt = scrapFeedbackUserPromptTemplate.render(userPromptValues);
         String chatResponse = ChatClient.builder(this.chatModel).build()
