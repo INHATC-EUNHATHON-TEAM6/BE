@@ -48,6 +48,28 @@ public class FeedbackService {
         this.embeddingModel = embeddingModel;
     }
 
+    public FeedbacksDto getScrapActivityRecord(long articleId) {
+        long userId = 1L;
+        List<ScrapActivities> scrapActivities = feedbackRepository.findByUserIdAndArticleId(userId, articleId);
+        Optional<Article> optionalArticle = articleRepository.findById(articleId);
+        Article article = optionalArticle.orElseThrow(
+                () -> new IllegalArgumentException("해당 Article 없음")
+        );
+        Category category = new Category(article.getCategoryId());
+        List<FeedbackDto> feedbacks = new ArrayList<>();
+        for (ScrapActivities activities : scrapActivities) {
+            FeedbackDto feedback = new FeedbackDto(
+                    activities.getComparisonType(),
+                    activities.getUserAnswer(),
+                    activities.getAiAnswer(),
+                    activities.getAiFeedback(),
+                    activities.getEvaluationScore()
+            );
+            feedbacks.add(feedback);
+        }
+        return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
+    }
+
     public FeedbacksDto feedbackScrapActivity(ScrapActivityDto activity) throws JsonProcessingException {
         // ❗️하드코딩!
         long userId = 1L;
@@ -122,7 +144,7 @@ public class FeedbackService {
             scrapActivities.setEvaluationScore(feedback.getEvaluationScore());
             feedbackRepository.save(scrapActivities);
         }
-        return new FeedbacksDto(article.getContent(), feedbacks);
+        return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
     }
 
     private FeedbackDto compareCategory(String userCategory, String aiCategory, String aiFeedback) {
