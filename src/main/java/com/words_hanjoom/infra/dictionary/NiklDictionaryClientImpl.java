@@ -18,9 +18,7 @@ import reactor.core.publisher.Mono;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Slf4j
 @Component
@@ -171,15 +169,27 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                                     String exampleFromSearch = textOrNull(senseNode, "example");
 
                                     return fetchFirstSenseInfo(tcRaw)
-                                            .defaultIfEmpty(new SenseInfo(exampleFromSearch, null))
+                                            .defaultIfEmpty(new SenseInfo(exampleFromSearch, null, List.of(), List.of()))
                                             .map(si -> {
-                                                String finalExample = (si.example() != null && !si.example().isBlank())
-                                                        ? si.example() : exampleFromSearch;
-                                                Short finalSenseNo = si.senseNo();
-                                                log.debug("[DICT] chose lemma={}, sup={}, tc={}, senseNo={}, via {}:{}",
-                                                        lemma, supNo, targetCode, finalSenseNo, method, target);
-                                                return new DictEntry(lemma, def, type, targetCode, supNo, finalExample, finalSenseNo);
-                                            });
+                                                String finalExample = !isBlank(si.example()) ? si.example() : exampleFromSearch;
+                                                return DictEntry.builder()
+                                                        .lemma(lemma)
+                                                        .definition(def)
+                                                        .fieldType(type)
+                                                        .targetCode(targetCode)
+                                                        .shoulderNo(supNo)
+                                                        .example(finalExample)
+                                                        .senseNo(si.senseNo())
+                                                        .synonyms(si.synonyms())
+                                                        .antonyms(si.antonyms())
+                                                        .build();
+                                            })
+                                            .doOnNext(de -> log.debug("[DICT] merged for {} syn={} ant={} exEmpty={}",
+                                                    de.getLemma(),
+                                                    de.getSynonyms()==null?0:de.getSynonyms().size(),
+                                                    de.getAntonyms()==null?0:de.getAntonyms().size(),
+                                                    de.getExample()==null || de.getExample().isBlank(),
+                                                    de.getSenseNo()));
                                 });
                     } catch (Exception e) {
                         log.warn("[DICT] parse error(searchOnce {}:{}): {}", method, target, e.toString(), e);
@@ -229,7 +239,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                         .queryParam("method", "target_code")
                         .queryParam("target_code", targetCode)
                         .build())
-                .accept(MediaType.parseMediaType("text/json"))
+                .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(String.class)
                 .switchIfEmpty(Mono.empty())
@@ -239,7 +249,6 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 })
                 .flatMap(body -> {
                     try {
-                        // ▶ 디버그: 원문 확인(너무 길면 자름)
                         if (log.isDebugEnabled()) {
                             String trimmed = body.length() > 2000 ? body.substring(0, 2000) + " …(truncated)" : body;
                             log.debug("[DICT] view raw for {} :: {}", targetCode, trimmed);
@@ -248,29 +257,36 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                         JsonNode root = objectMapper.readTree(body);
                         JsonNode item = root.path("channel").path("item");
                         if (item.isMissingNode() || item.isNull()) return Mono.empty();
-                        if (item.isArray()) item = item.path(0);           // item이 배열이면 첫번째
 
-                        // sense는 단일/배열 모두 처리
-                        JsonNode sense = item.path("sense");
-                        if (sense.isArray()) sense = sense.path(0);
+                        // ▶ JSON 샘플에 맞춰 첫 sense 추출
+                        JsonNode sense = pickFirstSense(item);
+                        if (sense == null) return Mono.empty();
 
-                        // 예문 후보들 스캔
-                        String example =
-                                textOrNull(sense, "example")
-                                ; if (isBlank(example)) example = textOrNull(sense.path("examples").path(0), "example");
-                        if (isBlank(example)) example = textOrNull(sense.path("example_list").path(0), "text");
-                        if (isBlank(example)) example = textOrNull(sense.path("sense_example").path(0), "example");
+                        // 예문
+                        String example = pickExample(sense);
 
-                        // sense_no 여러 경로에서 탐색
-                        String senseNoStr =
-                                textOrNull(sense, "sense_no");
-                        if (isBlank(senseNoStr)) senseNoStr = textOrNull(sense, "sense_order");
-                        if (isBlank(senseNoStr)) senseNoStr = findFirstByKeys(item, "sense_no", "sense_order"); // 🔁 백업: item 하위 전체 탐색
+                        // 의미 번호: 샘플에는 sense_no 대신 sense_code 가 옴(숫자)
+                        Short senseNo = null;
+                        String senseCodeStr = textOrNull(sense, "sense_code");
+                        if (!isBlank(senseCodeStr)) {
+                            try { senseNo = Short.valueOf(senseCodeStr); } catch (NumberFormatException ignore) {}
+                        }
+                        if (senseNo == null) {
+                            // 구버전/다른 스키마(있을 수도) 대비
+                            senseNo = toShortOrNull(textOrNull(sense, "sense_no"));
+                        }
 
-                        Short senseNo = toShortOrNull(senseNoStr);
+                        // 유의어/반의어
+                        List<String> synonyms = collectLexical(item, sense, true);
+                        List<String> antonyms = collectLexical(item, sense, false);
 
-                        log.debug("[DICT] view parsed tc={}, senseNo={}, exEmpty={}", targetCode, senseNo, isBlank(example));
-                        return Mono.just(new SenseInfo(example, senseNo));
+                        log.debug("[DICT] view parsed tc={}, syn={}, ant={}, exEmpty={}, senseNo={}",
+                                targetCode, synonyms.size(), antonyms.size(), isBlank(example), senseNo);
+
+                        log.info("[DICT] view tc={} → example='{}' syn={} ant={} senseNo={}",
+                                targetCode, example, synonyms, antonyms, senseNo);
+
+                        return Mono.just(new SenseInfo(example, senseNo, synonyms, antonyms));
                     } catch (Exception e) {
                         log.warn("[DICT] view parse error: {}", e.toString());
                         return Mono.empty();
@@ -278,33 +294,12 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 });
     }
 
-    private static String findFirstByKeys(JsonNode node, String... keys) {
-        if (node == null || node.isMissingNode() || node.isNull()) return null;
-        for (String k : keys) {
-            JsonNode n = node.get(k);
-            if (n != null && !n.isMissingNode() && !n.isNull()) {
-                String v = n.asText(null);
-                if (v != null && !v.isBlank()) return v;
-            }
-        }
-        // 자식 재귀 탐색
-        var fields = node.fields();
-        while (fields.hasNext()) {
-            var e = fields.next();
-            String v = findFirstByKeys(e.getValue(), keys);
-            if (v != null && !v.isBlank()) return v;
-        }
-        // 배열 재귀 탐색
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                String v = findFirstByKeys(child, keys);
-                if (v != null && !v.isBlank()) return v;
-            }
-        }
-        return null;
+    private static boolean isMissing(JsonNode n) {
+        return n == null || n.isMissingNode() || n.isNull();
     }
-
-    private record SenseInfo(String example, Short senseNo) {
+    private static JsonNode first(JsonNode n) {
+        if (isMissing(n)) return n;
+        return n.isArray() ? n.path(0) : n;
     }
 
     private <T> T read(String body, Class<T> type) {
@@ -331,6 +326,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         return s == null || s.isBlank();
     }
 
+
     // 문자열 공백 방어
     private static String nz(String s) {
         return (s == null || s.isBlank()) ? null : s;
@@ -344,8 +340,8 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     }
 
     private static Short toShortOrNull(String s) {
-        if (s == null || s.isBlank()) return null;
-        try { return Short.valueOf(s.trim()); } catch (NumberFormatException e) { return null; }
+        if (isBlank(s)) return null;
+        try { return Short.valueOf(s); } catch (Exception e) { return null; }
     }
 
     // (1) 유틸: 공백/정규화
@@ -373,5 +369,111 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         int mid = qq.length() / 2;
         return qq.substring(0, mid) + "*" + qq.substring(mid);    // 기념*촬영
     }
+    /** type 문자열이 유의어/반의어 계열인지 판별 */
+    private static boolean isSynonymType(String type) {
+        if (type == null) return false;
+        String t = type.replace(" ", "");
+        return t.contains("유의") || t.contains("비슷") || t.contains("동의");
+    }
+    private static boolean isAntonymType(String type) {
+        if (type == null) return false;
+        String t = type.replace(" ", "");
+        return t.contains("반의") || t.contains("반대") || t.contains("상반");
+    }
 
+
+    /** word_info → pos_info[] → comm_pattern_info[] → sense_info[] 첫 번째 sense 노드 선택 */
+    private static JsonNode pickFirstSense(JsonNode item) {
+        if (item == null || item.isMissingNode() || item.isNull()) return null;
+        JsonNode wi = item.path("word_info");
+        JsonNode posArr = wi.path("pos_info");
+        if (posArr.isArray()) {
+            for (JsonNode pos : posArr) {
+                JsonNode commArr = pos.path("comm_pattern_info");
+                if (commArr.isArray()) {
+                    for (JsonNode comm : commArr) {
+                        JsonNode senses = comm.path("sense_info");
+                        if (senses.isArray() && senses.size() > 0) {
+                            return senses.get(0); // 첫 sense
+                        } else if (senses.isObject()) {
+                            return senses;       // 단일 객체 특수 케이스
+                        }
+                    }
+                }
+            }
+        }
+        // 혹시 상이한 스키마(구버전 등)에 대비해 백업 경로도 시도
+        JsonNode direct = item.path("sense_info");
+        if (direct.isArray() && direct.size() > 0) return direct.get(0);
+        if (direct.isObject()) return direct;
+        return null;
+    }
+
+    /** sense_info에서 예문 하나 고르기 (우선순위: example_info[].example → 기타 백업 키) */
+    private static String pickExample(JsonNode sense) {
+        if (sense == null || sense.isMissingNode() || sense.isNull()) return null;
+
+        JsonNode exList = sense.path("example_info");
+        if (exList.isArray() && exList.size() > 0) {
+            String ex = textOrNull(exList.get(0), "example");
+            if (!isBlank(ex)) return ex;
+        }
+        // 백업 키들
+        String ex = textOrNull(sense, "example");
+        if (!isBlank(ex)) return ex;
+        ex = textOrNull(sense.path("sense_example").path(0), "example");
+        if (!isBlank(ex)) return ex;
+        ex = textOrNull(sense.path("example_list").path(0), "text");
+        return ex;
+    }
+
+    /** sense.lexical_info 및 word_info.relation_info/lexical_info 백업까지 긁어오기 */
+    private static List<String> collectLexical(JsonNode item, JsonNode sense, boolean wantSyn) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+
+        java.util.function.Consumer<JsonNode> harvest = container -> {
+            if (container == null || container.isMissingNode() || container.isNull()) return;
+
+            JsonNode arr = container.path("lexical_info");
+            if (arr.isArray()) {
+                for (JsonNode rel : arr) {
+                    String type = textOrNull(rel, "type");
+                    boolean ok = wantSyn ? isSynonymType(type) : isAntonymType(type);
+                    if (!ok) continue;
+
+                    String w = textOrNull(rel, "word");
+                    if (isBlank(w)) {
+                        JsonNode wn = rel.path("word");
+                        if (wn.isObject()) {
+                            w = textOrNull(wn, "value");
+                            if (isBlank(w)) w = textOrNull(wn, "text");
+                        } else if (wn.isArray()) {
+                            for (JsonNode el : wn) {
+                                String cand = el.isTextual() ? el.asText() : textOrNull(el, "value");
+                                if (!isBlank(cand)) out.add(cand);
+                            }
+                        }
+                    }
+                    if (!isBlank(w)) out.add(w);
+                }
+            }
+
+            JsonNode relInfo = container.path("relation_info");
+            if (relInfo.isArray()) {
+                for (JsonNode rel : relInfo) {
+                    String type = textOrNull(rel, "type");
+                    boolean ok = wantSyn ? isSynonymType(type) : isAntonymType(type);
+                    if (!ok) continue;
+                    String w = textOrNull(rel, "word");
+                    if (!isBlank(w)) out.add(w);
+                }
+            }
+        };
+
+        harvest.accept(sense);                 // 보통 여기서 대부분 나옴
+        harvest.accept(item.path("word_info"));// 백업 경로
+        return new ArrayList<>(out);
+    }
+
+    record SenseInfo(String example, Short senseNo, List<String> synonyms, List<String> antonyms) {}
 }

@@ -67,6 +67,7 @@ public class UnknownWordService {
         log.debug("[WORD] start saveOne userId={}, surface='{}', plain='{}'", userId, surface, plain);
 
 
+
         // 1) DB 먼저 조회 (입력값과 동일한 표제어가 이미 있을 때, API 스킵)
         Optional<Word> existing = wordRepository.findByWordName(surface);
         if (existing.isEmpty()) {
@@ -94,10 +95,19 @@ public class UnknownWordService {
         // 2) 없으면 API 조회
         log.debug("[WORD] DB MISS surface='{}' – calling DICT API", surface);
         DictEntry entry = dictClient.quickLookup(surface).blockOptional().orElse(null);
+
         if (entry == null) {
             log.debug("[WORD] DICT MISS for surface='{}' – skip", surface);
             return Optional.empty(); // 사전 미히트 → 스킵
         }
+
+        log.info("[WORD] entry lemma='{}' tc={} ex?={} syn={} ant={} senseNo={}",
+                entry.getLemma(),
+                entry.getTargetCode(),
+                entry.getExample() != null && !entry.getExample().isBlank(),
+                entry.getSynonyms() == null ? -1 : entry.getSynonyms().size(),
+                entry.getAntonyms() == null ? -1 : entry.getAntonyms().size(),
+                entry.getSenseNo());
 
         final String wordName = cut(entry.getLemma(), LEN_WORD_NAME);
         final String definition = cut(entry.getDefinition(), LEN_DEF);
@@ -107,6 +117,19 @@ public class UnknownWordService {
 
         log.debug("[SAVE] surface={}, lemma={}, tc={}, senseNo={}",
                 surface, entry.getLemma(), entry.getTargetCode(), entry.getSenseNo());
+
+        // 리스트 → 콤마 문자열 (NOT NULL 보장)
+        String synCsv = (entry.getSynonyms() == null || entry.getSynonyms().isEmpty())
+                ? "" : String.join(",", entry.getSynonyms());
+        String antCsv = (entry.getAntonyms() == null || entry.getAntonyms().isEmpty())
+                ? "" : String.join(",", entry.getAntonyms());
+
+
+        log.info("[WORD] save '{}' syn={} ant={} senseNo={}",
+                wordName,
+                (entry.getSynonyms() == null ? 0 : entry.getSynonyms().size()),
+                (entry.getAntonyms() == null ? 0 : entry.getAntonyms().size()),
+                entry.getSenseNo());
 
         Word word = wordRepository.findByWordName(wordName)
                 .map(w -> {
@@ -150,10 +173,10 @@ public class UnknownWordService {
                                 .wordCategory(entry.getFieldType())
                                 .shoulderNo(entry.getShoulderNo())
                                 .example(example == null ? "" : example)
-                                .targetCode(targetCode)                 // ✅ 새 insert에도 세팅
-                                .senseNo(senseNo)
-                                .synonym("")
-                                .antonym("")
+                                .targetCode(targetCode)
+                                .senseNo(entry.getSenseNo())
+                                .synonym(joinList(entry.getSynonyms()))
+                                .antonym(joinList(entry.getAntonyms()))
                                 .build());
                     } catch (DataIntegrityViolationException e) {
 
@@ -179,6 +202,14 @@ public class UnknownWordService {
                 .map(s -> Normalizer.normalize(s, Normalizer.Form.NFKC))
                 .distinct()
                 .collect(Collectors.toList());
+    }
+
+    private static String joinList(java.util.List<String> list) {
+        if (list == null || list.isEmpty()) return ""; // NOT NULL 컬럼 대비
+        return list.stream()
+                .filter(s -> s != null && !s.isBlank())
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     private String normalizeKo(String s) {
