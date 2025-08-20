@@ -42,6 +42,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
     @Override
     public Mono<SearchResponse> search(SearchRequest req) {
+        // --- 필수/기본값 보정 ---
         String q = nz(req.q());
         if (q == null) return Mono.empty();
 
@@ -104,7 +105,9 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         String qq = nz(q);
         if (qq == null) return Mono.empty();
 
-        return searchFirst(qq, "exact", 1)
+        // 표제어/뜻풀이/용례 포함 검색을 모두 시도하고 가장 적합한 결과를 반환
+        return Mono.just(qq)
+                .flatMap(word -> searchFirst(word, "exact", 1))
                 .switchIfEmpty(Mono.defer(() -> searchFirst(qq, "include", 1)))
                 .switchIfEmpty(Mono.defer(() -> searchFirst(wildcardMiddle(qq), "wildcard", 1)))
                 .switchIfEmpty(Mono.defer(() -> searchFirst(qq, "include", 8)))
@@ -115,6 +118,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 }));
     }
 
+    // ===== 개별 호출 + 파싱 =====
     private Mono<DictEntry> searchFirst(String q, String method, Integer target) {
         String qq = nz(q);
         if (qq == null) return Mono.empty();
@@ -200,8 +204,6 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     private Mono<SenseInfo> fetchFirstSenseInfo(long targetCode) {
         if (targetCode <= 0) return Mono.empty();
 
-        log.info("[DICT] fetchFirstSenseInfo called, tc={}", targetCode);
-
         return dicWebClient.get()
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
@@ -221,24 +223,16 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                         JsonNode item = root.path("channel").path("item");
                         if (isMissing(item)) return Mono.empty();
 
-                        if (item.isArray() && item.size() > 0) {
-                            item = item.get(0);
-                        }
+                        JsonNode senseNode = pickFirstSense(item);
+                        if (isMissing(senseNode)) return Mono.empty();
 
-                        JsonNode sense = pickFirstSense(item);
-                        if (isMissing(sense)) return Mono.empty();
+                        String example = pickExample(senseNode);
+                        Short senseNo = toShortOrNull(senseNode.path("sense_code").asText(null));
+                        List<String> synonyms = collectLexical(item, senseNode, true);
+                        List<String> antonyms = collectLexical(item, senseNode, false);
 
-                        String example = pickExample(sense);
-                        Short senseNo = toShortOrNull(textOrNull(sense, "sense_no"));
-                        if (senseNo == null && sense.has("sense_code")) {
-                            senseNo = (short) sense.get("sense_code").asInt();
-                        }
-
-                        List<String> synonyms = collectLexical(item, sense, true);
-                        List<String> antonyms = collectLexical(item, sense, false);
-
-                        log.debug("[DICT] view parsed tc={}, senseNo={}, syn={}, ant={}, ex={}",
-                                targetCode, senseNo, synonyms.size(), antonyms.size(), isBlank(example));
+                        log.debug("[DICT] view parsed tc={}, exEmpty={}, senseNo={}, syn={}, ant={}",
+                                targetCode, isBlank(example), senseNo, synonyms.size(), antonyms.size());
 
                         return Mono.just(new SenseInfo(example, senseNo, synonyms, antonyms));
                     } catch (Exception e) {
@@ -248,6 +242,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 });
     }
 
+    // --- 유틸리티 메서드 ---
     private static boolean isMissing(JsonNode n) {
         return n == null || n.isMissingNode() || n.isNull();
     }
@@ -307,7 +302,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     }
 
     private static JsonNode pickFirstSense(JsonNode item) {
-        if (isMissing(item)) return MissingNode.getInstance();
+        if (isMissing(item)) return null;
         JsonNode wi = item.path("word_info");
         JsonNode posArr = wi.path("pos_info");
         if (posArr.isArray() && posArr.size() > 0) {
@@ -315,22 +310,18 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
             if (commArr.isArray() && commArr.size() > 0) {
                 JsonNode senses = commArr.path(0).path("sense_info");
                 if (senses.isArray() && senses.size() > 0) {
-                    for (JsonNode s : senses) {
-                        if (s.has("lexical_info") || s.has("example_info")) {
-                            return s;
-                        }
-                    }
                     return senses.get(0);
-                } else if (!isMissing(senses) && senses.isObject()) {
+                } else if (senses.isObject()) {
                     return senses;
                 }
             }
         }
-        return MissingNode.getInstance();
+        return item.path("sense");
     }
 
     private static String pickExample(JsonNode sense) {
         if (isMissing(sense)) return null;
+
         JsonNode exList = sense.path("example_info");
         if (exList.isArray() && exList.size() > 0) {
             for (JsonNode exNode : exList) {
@@ -350,8 +341,8 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         if (senseLexical.isArray()) {
             for (JsonNode node : senseLexical) {
                 String type = textOrNull(node, "type");
-                String word = textOrNull(node, "word");
                 if (wantSyn && isSynonymType(type) || (!wantSyn && isAntonymType(type))) {
+                    String word = textOrNull(node, "word");
                     if (!isBlank(word)) {
                         out.add(word);
                     }
@@ -365,8 +356,8 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
             if (relationInfo.isArray()) {
                 for (JsonNode node : relationInfo) {
                     String type = textOrNull(node, "type");
-                    String word = textOrNull(node, "word");
                     if (wantSyn && isSynonymType(type) || (!wantSyn && isAntonymType(type))) {
+                        String word = textOrNull(node, "word");
                         if (!isBlank(word)) {
                             out.add(word);
                         }
