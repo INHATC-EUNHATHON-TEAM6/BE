@@ -1,5 +1,8 @@
 package com.words_hanjoom.domain.wordbooks.controller;
 
+import com.words_hanjoom.domain.wordbooks.dto.response.WordDto;
+import com.words_hanjoom.domain.wordbooks.entity.Word;
+import com.words_hanjoom.domain.wordbooks.repository.WordRepository;
 import com.words_hanjoom.domain.wordbooks.service.ScrapIngestService;
 import com.words_hanjoom.domain.wordbooks.service.UnknownWordService;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +18,23 @@ import java.util.List;
 public class UnknownWordController {
 
     private final UnknownWordService unknownWordService;
-    private final ScrapIngestService scrapIngestService;
+    private final WordRepository wordRepository;
+
+    // 단건 조회: /api/words/{id}
+    @GetMapping("/{id}")
+    public WordDto getWord(@PathVariable Long id) {
+        Word w = wordRepository.findById(id).orElseThrow();
+        return WordDto.from(w);
+    }
+
+    // 전체 목록: /api/words
+    @GetMapping
+    public List<WordDto> list() {
+        return wordRepository.findAll()
+                .stream()
+                .map(WordDto::from)
+                .toList();
+    }
 
     /**
      * JSON 배열: ["실수","사과","반성"]
@@ -35,18 +54,4 @@ public class UnknownWordController {
         return ResponseEntity.ok(unknownWordService.saveAll(userId, tokens));
     }
 
-    /**
-     * CSV 문자열: "실수, 사과, 반성"
-     */
-    @PostMapping(
-            value = "/save-csv",
-            consumes = MediaType.TEXT_PLAIN_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE
-    )
-    public ResponseEntity<UnknownWordService.Result> saveWordCsv(
-            @RequestParam Long userId,
-            @RequestBody String csv
-    ) {
-        return ResponseEntity.ok(unknownWordService.processCsv(userId, csv));
-    }
 }

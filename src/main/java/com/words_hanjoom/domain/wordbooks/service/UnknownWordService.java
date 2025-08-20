@@ -58,15 +58,46 @@ public class UnknownWordService {
 
         // ✅ 수정: API 호출 전에 입력 값이 유효한지 확인
         if (raw == null || raw.isBlank()) {
+            log.debug("[WORD] skip blank token (userId={}): '{}'", userId, raw);
             return Optional.empty();
         }
 
         final String surface = normalizeKo(raw);
-        DictEntry entry = dictClient.quickLookup(surface).blockOptional().orElse(null);
-        if (entry == null) {
-            return Optional.empty(); // 사전 미히트 → 스킵
+        final String plain   = surface.replaceAll("[-·ㆍ‐–—]", "");
+        log.debug("[WORD] start saveOne userId={}, surface='{}', plain='{}'", userId, surface, plain);
+
+
+        // 1) DB 먼저 조회 (입력값과 동일한 표제어가 이미 있을 때, API 스킵)
+        Optional<Word> existing = wordRepository.findByWordName(surface);
+        if (existing.isEmpty()) {
+            existing = wordRepository.findLooselyByName(surface, plain);
         }
 
+        if (existing.isPresent()) {
+            Word w = existing.get();
+            log.info("[WORD] DB HIT (NO API) surface='{}' → wordId={}, name='{}'", surface, w.getWordId(), w.getWordName());
+
+            WordbookWordId id = new WordbookWordId(
+                    wordbookRepository.getOrCreateEntity(userId).getWordbookId(),
+                    w.getWordId()
+            );
+            if (!wordbookWordRepository.existsById(id)) {
+                wordbookWordRepository.save(WordbookWord.builder().id(id).build());
+                log.info("[WORD] mapping CREATED wordbookId={} wordId={}", id.getWordbookId(), id.getWordId());
+            } else {
+                log.debug("[WORD] mapping already exists wordbookId={} wordId={}", id.getWordbookId(), id.getWordId());
+            }
+            return Optional.of(new SavedWord(surface, w.getWordName(), w.getWordId()));
+        }
+
+
+        // 2) 없으면 API 조회
+        log.debug("[WORD] DB MISS surface='{}' – calling DICT API", surface);
+        DictEntry entry = dictClient.quickLookup(surface).blockOptional().orElse(null);
+        if (entry == null) {
+            log.debug("[WORD] DICT MISS for surface='{}' – skip", surface);
+            return Optional.empty(); // 사전 미히트 → 스킵
+        }
 
         final String wordName = cut(entry.getLemma(), LEN_WORD_NAME);
         final String definition = cut(entry.getDefinition(), LEN_DEF);
@@ -124,8 +155,8 @@ public class UnknownWordService {
                                 .synonym("")
                                 .antonym("")
                                 .build());
-
                     } catch (DataIntegrityViolationException e) {
+
                         return wordRepository.findByWordName(wordName).orElseThrow(() -> e);
                     }
                 });

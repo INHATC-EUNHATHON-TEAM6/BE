@@ -2,6 +2,8 @@ package com.words_hanjoom.domain.wordbooks.repository;
 
 import com.words_hanjoom.domain.wordbooks.entity.Word;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -16,6 +18,15 @@ public interface WordRepository extends JpaRepository<Word, Long> {
     Optional<Word> findByTargetCodeAndSenseNo(Long targetCode, Short senseNo);
 
     Optional<Word> findByWordName(String wordName);
+    @Query(value = """
+        SELECT * FROM words
+        WHERE word_name = :surface
+           OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(word_name,
+               '-', ''), '·', ''), 'ㆍ', ''), '‐', ''), '–', ''), '—', '') = :plain
+        LIMIT 1
+        """, nativeQuery = true)
+    Optional<Word> findLooselyByName(@Param("surface") String surface,
+                                     @Param("plain")   String plain);
 
     // 같은 표기어(동음이의/동형이의) 전부 가져올 때
     List<Word> findAllByWordName(String wordName);
