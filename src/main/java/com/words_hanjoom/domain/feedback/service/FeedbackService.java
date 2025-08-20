@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.words_hanjoom.domain.feedback.dto.request.ScrapActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbackDto;
+import com.words_hanjoom.domain.feedback.dto.response.FeedbackThisMonthActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.entity.ActivityType;
 import com.words_hanjoom.domain.feedback.entity.Article;
@@ -22,6 +23,7 @@ import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static com.words_hanjoom.domain.feedback.service.FeedbackServicePromptTemplate.*;
@@ -46,6 +48,27 @@ public class FeedbackService {
         this.objectMapper = objectMapper;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
+    }
+
+    public Map<String, List<FeedbackThisMonthActivityDto>> getUserActivitiesThisMonth(int year, int month, int day) {
+        LocalDateTime startDate = LocalDateTime.of(year, month, 1, 0, 0, 0);
+        LocalDateTime endDate = LocalDateTime.of(year, month, day, 23, 59, 59);
+        List<FeedbackThisMonthActivityDto> feedbackListThisMonth = feedbackRepository.findByUserIdAndYearAndMonthAndDay(1, startDate, endDate);
+        Map<String, List<FeedbackThisMonthActivityDto>> activityOfDay = new HashMap<>();
+        for (FeedbackThisMonthActivityDto feedbackRecord : feedbackListThisMonth) {
+            Optional<Article> optionalArticle = articleRepository.findById(feedbackRecord.getArticleId());
+            Article article = optionalArticle.orElseThrow(
+                    () -> new IllegalArgumentException("해당 Article 없음")
+            );
+            Category category = new Category(article.getCategoryId());
+            feedbackRecord.setCategory(category.getCategoryName());
+            int daily = feedbackRecord.getActivityAt().getDayOfMonth();
+            if (activityOfDay.get(Integer.toString(daily)) == null) {
+                activityOfDay.put(Integer.toString(daily), new ArrayList<>());
+            }
+            activityOfDay.get(Integer.toString(daily)).add(feedbackRecord);
+        }
+        return activityOfDay;
     }
 
     public FeedbacksDto feedbackScrapActivity(ScrapActivityDto activity) throws JsonProcessingException {
