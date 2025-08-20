@@ -3,7 +3,6 @@ package com.words_hanjoom.domain.crawling.service;
 import com.words_hanjoom.domain.crawling.dto.request.SectionRequest;
 import com.words_hanjoom.domain.crawling.dto.response.CrawlResult;
 import com.words_hanjoom.domain.crawling.repository.*;
-
 import lombok.RequiredArgsConstructor;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -18,31 +17,28 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
-public class HankyungScraperService implements IScraperService, IPageCounter, ISubCategoryCrawl {
+public class ScienceTimesScraperService implements IScraperService, IPageCounter, ISubCategoryCrawl {
 
     private final ArticleRepository articleRepository;
     private final CrawlCategoryRepository categoryRepository;
-    private final HKNewsCrawlService hkNewsCrawlService;
-    private static final String HANKYUNG_BASE_URL = "https://www.hankyung.com";
+    private final SCNewsCrawlService scNewsCrawlService;
+    private static final String SCIENCETIMES_BASE_URL = "https://www.sciencetimes.co.kr/nscvrg/list/menu";
 
-    private final Map<String, Map<String, Object>> hankyungFields = Map.of(
-            // 한국경제
-            "경제", Map.of("field", "economy", "subFields", new String[]{"economic-policy", "macro", "forex", "tax", "job-welfare"}),
-            "복지", Map.of("field", "economy", "subFields", new String[]{"job-welfare"}),
-            "금융", Map.of("field", "financial-market", "subFields", new String[]{"financial-policy", "bank", "insurance-nbfis", "cryptocurrency-fintech", "personal-finance"}),
-            "산업", Map.of("field", "industry", "subFields", new String[]{"semicon-electronics", "auto-battery", "ship-marine", "steel-chemical", "robot-future", "manage-business"}),
-            "사회", Map.of("field", "society", "subFields", new String[]{"administration", "education", "employment"}),
-            "문화", Map.of("field", "culture", "subFields", new String[]{})
+    private final Map<String, Map<String, Object>> sciencetimesFields = Map.of(
+            // 사이언스 타임즈
+            "기초, 응용과학", Map.of("field", "248", "subFields", new String[]{"searchCategory=220"}),
+            "신소재, 신기술", Map.of("field", "250", "subFields", new String[]{"searchCategory=222"}),
+            "생명과학, 의학", Map.of("field", "251", "subFields", new String[]{"searchCategory=223"}),
+            "항공, 우주", Map.of("field", "252", "subFields", new String[]{"searchCategory=224"}),
+            "환경, 에너지", Map.of("field", "253", "subFields", new String[]{"searchCategory=225"})
     );
-
-
 
     @Override
     public CrawlResult scrape(String fieldName) throws IOException {
         int savedCount = 0;
         List<SectionRequest> allArticleLinks = new ArrayList<>();
 
-        Map<String, Object> data = hankyungFields.get(fieldName);
+        Map<String, Object> data = sciencetimesFields.get(fieldName);
         if (data == null) {
             // 알 수 없는 카테고리일 경우 예외를 던집니다.
             throw new IllegalArgumentException("알 수 없는 카테고리: " + fieldName);
@@ -51,13 +47,14 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
         String[] subFields = (String[]) data.get("subFields");
 
         for (String subField : subFields) {
-            String sectionUrl = HANKYUNG_BASE_URL + "/" + field + "/" + subField;
+            String sectionUrl = SCIENCETIMES_BASE_URL + "/" + field + "?" + subField;
 
+            // 뉴스기사목록 첫페이지에서 페이지 개수 추출
             int pageCount = getSubCategoryPageCount(sectionUrl);
 
             // 페이지 개수만큼 반복 -> 데이터 과다로 인해 서브카테고리별 5페이지로 제한
             for (int pageNo = 1; pageNo <= 5; pageNo++) {
-                String paginatedUrl = sectionUrl + "?page=" + pageNo;
+                String paginatedUrl = SCIENCETIMES_BASE_URL + "/" + field + "?" + "thisPage=" + pageNo + "&" + subField;
                 List<SectionRequest> links = subCategoryCrawl(paginatedUrl, fieldName);
 
                 if (links.isEmpty()) {
@@ -76,13 +73,13 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
 
                 if(pageNo%10 == 0) {
                     // 10페이지마다 크롤링 진행 상황 출력
-                    savedCount += hkNewsCrawlService.newsCrawl(allArticleLinks);
+                    savedCount += scNewsCrawlService.newsCrawl(allArticleLinks);
                     allArticleLinks.clear(); // 크롤링 후 링크 초기화
                 }
             }
 
             try {
-                savedCount += hkNewsCrawlService.newsCrawl(allArticleLinks);
+                savedCount = scNewsCrawlService.newsCrawl(allArticleLinks);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -91,23 +88,21 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
         return new CrawlResult(savedCount);
     }
 
-    // 서브 카테고리 페이지 수 확인
     @Override
     public int getSubCategoryPageCount(String sectionUrl) throws IOException {
         Document doc = Jsoup.connect(sectionUrl).get(); // Jsoup에 url 적용
-        Elements pagination = doc.select("div.select-paging div.page-select span.total"); // 페이지네이션 요소 선택
-        if (pagination.isEmpty()) return 1; // 페이지네이션이 없으면 1페이지로 간주
+        // 태그 요소 찾아서 마지막 페이지 번호 추출
+        Element aTag = doc.selectFirst("a.page_arrow.r2");
+        String lastPageNum;
 
-        // 1. 문자열에서 숫자 부분만 추출
-        String lastPageText = pagination.text().replaceAll("[^0-9]", "");
+        if(aTag != null) {
+            String onClick = aTag.attr("onclick");
+            lastPageNum = onClick.replaceAll("[^0-9]", ""); // 숫자만 추출
+            System.out.println("페이지 수: " + lastPageNum);
+        } else return 1; // 페이지네이션이 없으면 1페이지로 간주
 
-        // 2. 추출된 문자열이 비어있으면 1을 반환 (혹시 모를 오류 방지)
-        if (lastPageText.isEmpty()) {
-            return 1;
-        }
-
-        // 3. 필터링된 문자열을 숫자로 변환
-        return Integer.parseInt(lastPageText);
+        // 필터링된 문자열을 숫자로 변환
+        return Integer.parseInt(lastPageNum);
     }
 
     // 카테고리 내의 기사들 URL 크롤링
@@ -116,7 +111,7 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
         List<SectionRequest> articleList = new ArrayList<>();   // 카테고리 기사들 링크 list화
         Long categoryId = categoryRepository.findCategoryIdByCategoryName(fieldName);   // 카테고리 이름으로 DB에서 카테고리 ID 조회
         Document doc = Jsoup.connect(sectionUrl).get(); // Jsoup에 url 적용
-        Elements newsItems = doc.select("ul.news-list div.news-item");  // 기사 목록 추출
+        Elements newsItems = doc.select("article.sel_left section.news_content div.nc_word");  // 기사 목록 영역 지정
 
         if (newsItems.isEmpty()) {
             return articleList; // 빈 페이지
@@ -124,7 +119,7 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
 
         // 1) 첫 번째 기사 URL 추출 및 정규화
         Element firstItem = newsItems.first();
-        Element firstAnchor = (firstItem != null) ? firstItem.selectFirst("h2.news-tit a[href]") : null;
+        Element firstAnchor = (firstItem != null) ? firstItem.selectFirst("div.sub_txt a[href]") : null;
         if (firstAnchor == null) {
             return articleList; // 기사 구조가 다르면 안전하게 스킵
         }
@@ -138,7 +133,7 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
 
         // 3) 저장되지 않은 페이지면 전체 기사 링크 수집
         for (Element item : newsItems) {
-            Element a = item.selectFirst("h2.news-tit a[href]");
+            Element a = item.selectFirst("div.sub_txt a[href]");
             if (a == null) continue;
 
             // sectionRequest 객체 생성
