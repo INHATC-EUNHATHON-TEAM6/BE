@@ -16,7 +16,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import java.time.Duration;
 import java.util.*;
 
@@ -107,8 +107,14 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
     @Override
     public Mono<DictEntry> quickLookup(String q) {
-        // 내부에서 폴백 단계 전부 처리
-        return searchFirst(q);
+        String qq = nz(q);
+        if (qq == null) return Mono.empty();
+
+        return searchOnce(qq, "exact", 1)      // 표제어
+                .switchIfEmpty(searchOnce(qq, "include", 1))
+                .switchIfEmpty(searchOnce(qq, "wildcard", 1))
+                .switchIfEmpty(searchOnce(qq, "include", 8))  // 뜻풀이
+                .switchIfEmpty(searchOnce(qq, "include", 9)); // 용례
     }
 
     // ===== 개별 호출 + 파싱 =====
@@ -206,27 +212,73 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         String qq = nz(q);
         if (qq == null) return Mono.empty();
 
-        // 와일드카드 후보들
-        String wcMid  = wildcardMiddle(qq);       // 기념*촬영
-        String wcPre  = "*" + qq;                 // *기념촬영
-        String wcSuf  = qq + "*";                 // 기념촬영*
-        String wcBoth = "*" + qq + "*";           // *기념촬영*
-
-        return searchOnce(qq, qq, "exact",   1)
-                .switchIfEmpty(searchOnce(qq, qq, "include", 1))
-                .switchIfEmpty(searchOnce(wcMid,  qq, "wildcard", 1))
-                .switchIfEmpty(searchOnce(wcPre,  qq, "wildcard", 1))
-                .switchIfEmpty(searchOnce(wcSuf,  qq, "wildcard", 1))
-                .switchIfEmpty(searchOnce(wcBoth, qq, "wildcard", 1))
-                // 정의(8)와 용례(9)도 털어보기 — 약칭/표기변형 회수용
-                .switchIfEmpty(searchOnce(qq, qq, "include", 8))
-                .switchIfEmpty(searchOnce(qq, qq, "include", 9))
-                // 최종 노히트 로깅
-                .switchIfEmpty(Mono.defer(() -> {
-                    log.debug("[DICT] no hit for q='{}'", qq);
+        return dicWebClient.get()
+                .uri(b -> b.path("/search.do")
+                        .queryParam("key", apiKey)
+                        .queryParam("q", qq)
+                        .queryParam("req_type", "json")
+                        .queryParam("advanced", "y")
+                        .queryParam("method", method) // exact/include/wildcard …
+                        .queryParamIfPresent("target", java.util.Optional.ofNullable(target)) // 1(표제어) 등
+                        .build())
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .bodyToMono(String.class)
+                .onErrorResume(e -> {
+                    log.warn("[DICT] searchOnce error: {}", e.toString(), e);
                     return Mono.empty();
-                }));
+                })
+                .flatMap(body -> {
+                    try {
+                        JsonNode root  = objectMapper.readTree(body);
+                        JsonNode items = root.path("channel").path("item");
+                        if (!items.isArray() || items.size() == 0) return Mono.empty();
+
+                        // 가장 적합한 item 고르기 (완전일치 우선, 아니면 첫번째)
+                        JsonNode item = null;
+                        for (JsonNode it : items) {
+                            if (qq.equals(textOrNull(it, "word"))) { item = it; break; }
+                        }
+                        if (item == null) item = items.get(0);
+
+                        String lemma = textOrNull(item, "word");
+                        byte   supNo = (byte) item.path("sup_no").asInt(0);
+                        long   tc    = item.path("target_code").asLong(0);
+
+                        // search 응답의 간단한 정의/분야 (있으면 사용, 없으면 null)
+                        JsonNode sense = item.path("sense");
+                        String def  = textOrNull(sense, "definition");
+                        String type = textOrNull(sense, "type");
+                        String exampleFromSearch = textOrNull(sense, "example");
+
+                        if (tc <= 0) return Mono.empty();
+
+                        log.info("[DICT] search hit lemma='{}' tc={} → call view.do", lemma, tc);
+
+                        // ▼ 여기서 view.do로 예문/유의어/반의어/sense_no 보강
+                        return fetchFirstSenseInfo(tc)
+                                .defaultIfEmpty(new SenseInfo(null, null, java.util.List.of(), java.util.List.of()))
+                                .map(si -> {
+                                    String finalExample = !isBlank(si.example()) ? si.example() : exampleFromSearch;
+                                    return DictEntry.builder()
+                                            .lemma(lemma)
+                                            .definition(def)
+                                            .fieldType(type)
+                                            .targetCode(tc)
+                                            .shoulderNo(supNo)
+                                            .example(finalExample)
+                                            .senseNo(si.senseNo())
+                                            .synonyms(si.synonyms())
+                                            .antonyms(si.antonyms())
+                                            .build();
+                                });
+                    } catch (Exception e) {
+                        log.warn("[DICT] parse error(searchOnce {}): {}", method, e.toString(), e);
+                        return Mono.empty();
+                    }
+                });
     }
+
 
 
     private Mono<SenseInfo> fetchFirstSenseInfo(long targetCode) {
@@ -249,57 +301,55 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 })
                 .flatMap(body -> {
                     try {
-                        if (log.isDebugEnabled()) {
-                            String trimmed = body.length() > 2000 ? body.substring(0, 2000) + " …(truncated)" : body;
-                            log.debug("[DICT] view raw for {} :: {}", targetCode, trimmed);
-                        }
-
                         JsonNode root = objectMapper.readTree(body);
                         JsonNode item = root.path("channel").path("item");
-                        if (item.isMissingNode() || item.isNull()) return Mono.empty();
+                        if (isMissing(item)) return Mono.empty();
 
-                        // ▶ JSON 샘플에 맞춰 첫 sense 추출
-                        JsonNode sense = pickFirstSense(item);
-                        if (sense == null) return Mono.empty();
+                        JsonNode senseNode = pickFirstSense(item);
+                        if (senseNode == null || isMissing(senseNode)) return Mono.empty();
 
                         // 예문
-                        String example = pickExample(sense);
-
-                        // 의미 번호: 샘플에는 sense_no 대신 sense_code 가 옴(숫자)
-                        Short senseNo = null;
-                        String senseCodeStr = textOrNull(sense, "sense_code");
-                        if (!isBlank(senseCodeStr)) {
-                            try { senseNo = Short.valueOf(senseCodeStr); } catch (NumberFormatException ignore) {}
-                        }
-                        if (senseNo == null) {
-                            // 구버전/다른 스키마(있을 수도) 대비
-                            senseNo = toShortOrNull(textOrNull(sense, "sense_no"));
+                        String example = pickExample(senseNode);
+                        if (isBlank(example)) {
+                            // 정말 없으면 item 전체에서 'example' 계열 키 탐색
+                            example = findFirstByKeys(item, "example", "example_text");
                         }
 
-                        // 유의어/반의어
-                        List<String> synonyms = collectLexical(item, sense, true);
-                        List<String> antonyms = collectLexical(item, sense, false);
+                        String lemma = textOrNull(item, "word");
+                        String def = textOrNull(senseNode, "definition");
+                        String type = textOrNull(senseNode, "type");
+                        byte   supNo = (byte) item.path("sup_no").asInt(0);
+                        long tcRaw = item.path("target_code").asLong(0);
 
-                        log.debug("[DICT] view parsed tc={}, syn={}, ant={}, exEmpty={}, senseNo={}",
-                                targetCode, synonyms.size(), antonyms.size(), isBlank(example), senseNo);
+                        // API의 view 엔드포인트에서 상세 정보를 가져오도록 합니다.
+                        // 이렇게 하면 searchOnce와 fetchFirstSenseInfo의 역할이 명확해집니다.
+                        return fetchFirstSenseInfo(tcRaw)
+                                .map(si -> {
+                                    String finalExample = !isBlank(si.example()) ? si.example() : textOrNull(senseNode, "example");
 
-                        log.info("[DICT] view tc={} → example='{}' syn={} ant={} senseNo={}",
-                                targetCode, example, synonyms, antonyms, senseNo);
-
-                        return Mono.just(new SenseInfo(example, senseNo, synonyms, antonyms));
+                                    // ★ DictEntry.builder()를 람다 내부로 이동
+                                    return DictEntry.builder()
+                                            .lemma(lemma)
+                                            .definition(def)
+                                            .fieldType(type)
+                                            .targetCode(targetCode)
+                                            .shoulderNo(supNo)
+                                            .example(finalExample)
+                                            .senseNo(si.senseNo())
+                                            .synonyms(si.synonyms())
+                                            .antonyms(si.antonyms())
+                                            .build();
+                                });
                     } catch (Exception e) {
-                        log.warn("[DICT] view parse error: {}", e.toString());
+                        log.warn("[DICT] parse error(searchOnce {}:{}): {}", e.toString(), e);
                         return Mono.empty();
                     }
                 });
     }
 
+
     private static boolean isMissing(JsonNode n) {
         return n == null || n.isMissingNode() || n.isNull();
-    }
-    private static JsonNode first(JsonNode n) {
-        if (isMissing(n)) return n;
-        return n.isArray() ? n.path(0) : n;
     }
 
     private <T> T read(String body, Class<T> type) {
@@ -410,68 +460,57 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     }
 
     /** sense_info에서 예문 하나 고르기 (우선순위: example_info[].example → 기타 백업 키) */
+    /** sense_info에서 예문 하나 고르기 */
     private static String pickExample(JsonNode sense) {
-        if (sense == null || sense.isMissingNode() || sense.isNull()) return null;
+        if (isMissing(sense)) return null;
 
         JsonNode exList = sense.path("example_info");
         if (exList.isArray() && exList.size() > 0) {
-            String ex = textOrNull(exList.get(0), "example");
-            if (!isBlank(ex)) return ex;
+            // 첫 번째 예문을 찾아서 반환
+            for (JsonNode exNode : exList) {
+                String ex = textOrNull(exNode, "example");
+                if (!isBlank(ex)) {
+                    return ex;
+                }
+            }
         }
-        // 백업 키들
-        String ex = textOrNull(sense, "example");
-        if (!isBlank(ex)) return ex;
-        ex = textOrNull(sense.path("sense_example").path(0), "example");
-        if (!isBlank(ex)) return ex;
-        ex = textOrNull(sense.path("example_list").path(0), "text");
-        return ex;
+        return null;
     }
 
     /** sense.lexical_info 및 word_info.relation_info/lexical_info 백업까지 긁어오기 */
     private static List<String> collectLexical(JsonNode item, JsonNode sense, boolean wantSyn) {
-        LinkedHashSet<String> out = new LinkedHashSet<>();
+        Set<String> out = new LinkedHashSet<>();
 
-        java.util.function.Consumer<JsonNode> harvest = container -> {
-            if (container == null || container.isMissingNode() || container.isNull()) return;
+        // ① sense_info.lexical_info에서 수집
+        JsonNode senseLexical = sense.path("lexical_info");
+        if (senseLexical.isArray()) {
+            for (JsonNode node : senseLexical) {
+                String type = textOrNull(node, "type");
+                String word = textOrNull(node, "word");
+                if (wantSyn && isSynonymType(type) && !isBlank(word)) {
+                    out.add(word);
+                } else if (!wantSyn && isAntonymType(type) && !isBlank(word)) {
+                    out.add(word);
+                }
+            }
+        }
 
-            JsonNode arr = container.path("lexical_info");
-            if (arr.isArray()) {
-                for (JsonNode rel : arr) {
-                    String type = textOrNull(rel, "type");
-                    boolean ok = wantSyn ? isSynonymType(type) : isAntonymType(type);
-                    if (!ok) continue;
-
-                    String w = textOrNull(rel, "word");
-                    if (isBlank(w)) {
-                        JsonNode wn = rel.path("word");
-                        if (wn.isObject()) {
-                            w = textOrNull(wn, "value");
-                            if (isBlank(w)) w = textOrNull(wn, "text");
-                        } else if (wn.isArray()) {
-                            for (JsonNode el : wn) {
-                                String cand = el.isTextual() ? el.asText() : textOrNull(el, "value");
-                                if (!isBlank(cand)) out.add(cand);
-                            }
-                        }
+        // ② word_info.relation_info에서 수집 (백업)
+        JsonNode wordInfo = item.path("word_info");
+        if (!isMissing(wordInfo)) {
+            JsonNode relationInfo = wordInfo.path("relation_info");
+            if (relationInfo.isArray()) {
+                for (JsonNode node : relationInfo) {
+                    String type = textOrNull(node, "type");
+                    String word = textOrNull(node, "word");
+                    if (wantSyn && isSynonymType(type) && !isBlank(word)) {
+                        out.add(word);
+                    } else if (!wantSyn && isAntonymType(type) && !isBlank(word)) {
+                        out.add(word);
                     }
-                    if (!isBlank(w)) out.add(w);
                 }
             }
-
-            JsonNode relInfo = container.path("relation_info");
-            if (relInfo.isArray()) {
-                for (JsonNode rel : relInfo) {
-                    String type = textOrNull(rel, "type");
-                    boolean ok = wantSyn ? isSynonymType(type) : isAntonymType(type);
-                    if (!ok) continue;
-                    String w = textOrNull(rel, "word");
-                    if (!isBlank(w)) out.add(w);
-                }
-            }
-        };
-
-        harvest.accept(sense);                 // 보통 여기서 대부분 나옴
-        harvest.accept(item.path("word_info"));// 백업 경로
+        }
         return new ArrayList<>(out);
     }
 
