@@ -141,34 +141,43 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 })
                 .flatMap(body -> {
                     try {
-                        JsonNode root  = objectMapper.readTree(body);
-                        JsonNode items = root.path("channel").path("item");
-                        if (!items.isArray() || items.size() == 0) return Mono.empty();
+                        JsonNode root = objectMapper.readTree(body);
+                        JsonNode itemNode = root.path("channel").path("item");
+                        if (isMissing(itemNode)) return Mono.empty();
 
-                        // 가장 적합한 item 고르기 (완전일치 우선, 아니면 첫번째)
-                        JsonNode item = null;
-                        for (JsonNode it : items) {
-                            if (qq.equals(textOrNull(it, "word"))) {
-                                item = it;
-                                break;
-                            }
+                        // 1) item이 객체든 배열이든 모두 처리
+                        List<JsonNode> candidates = new ArrayList<>();
+                        if (itemNode.isArray()) {
+                            itemNode.forEach(candidates::add);
+                        } else if (itemNode.isObject()) {
+                            candidates.add(itemNode);
+                        } else {
+                            return Mono.empty();
                         }
-                        if (item == null) item = items.get(0);
 
-                        String lemma = textOrNull(item, "word");
+                        // 2) 표제어 추출 헬퍼
+                        java.util.function.Function<JsonNode, String> getLemma = it ->
+                                Optional.ofNullable(textOrNull(it, "word"))
+                                        .orElse(textOrNull(it.path("word_info"), "word"));
+
+                        // 3) 완전일치 우선 선택 (word 혹은 word_info.word)
+                        JsonNode item = candidates.stream()
+                                .filter(it -> qq.equals(getLemma.apply(it)))
+                                .findFirst()
+                                .orElse(candidates.get(0));
+
+                        String lemma = getLemma.apply(item);
+
                         long tc = item.path("target_code").asLong(0);
                         if (tc <= 0) return Mono.empty();
 
-                        // search 응답의 간단한 정의/분야 (있으면 사용, 없으면 null)
                         JsonNode senseFromSearch = pickFirstSense(item);
                         String def = textOrNull(senseFromSearch, "definition");
                         String type = textOrNull(senseFromSearch, "type");
                         String exampleFromSearch = pickExample(senseFromSearch);
                         byte supNo = (byte) item.path("sup_no").asInt(0);
 
-                        log.debug("[DICT] search hit lemma='{}' tc={} → call view.do", lemma, tc);
-
-                        // view.do로 예문/유의어/반의어/sense_no 보강
+                        // view.do로 보강
                         return fetchFirstSenseInfo(tc)
                                 .defaultIfEmpty(new SenseInfo(null, null, List.of(), List.of()))
                                 .map(si -> {
@@ -199,7 +208,6 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
-                        .queryParam("method", "target_code")
                         .queryParam("target_code", targetCode)
                         .build())
                 .accept(MediaType.APPLICATION_JSON)
