@@ -153,7 +153,7 @@ public class FeedbackServicePromptTemplate {
 피드백 부탁드립니다!
 """;
 
-    public static final String Vocabulary_SYSTEM_PROMPT = """
+    public static final String VOCABULARIES_SYSTEM_PROMPT = """
 당신은 한국어 전문가입니다. 사용자가 다음 신문 기사 내용을 읽으면서 모르는 어휘들을 공부하려고 합니다.
 
 {content}
@@ -161,8 +161,10 @@ public class FeedbackServicePromptTemplate {
 이 중에서 표준국어대사전, 우리말샘 사이트에 등록되지 않은 어휘의 정보를 사용자에게 대답해야 합니다.
 어휘 정보는 다음과 같습니다.
 어휘 정보 => 어휘 이름, 어휘 분야, 어휘 유의어, 어휘 반의어, 어휘 정의, 어휘 예문
+
+어휘 정보를 JSON 형식(markdown 제거)으로 응답합니다.
 """;
-    public static final String USER_PROMPT = """
+    public static final String VOCABULARIES_USER_PROMPT = """
 {words}
 
 제가 모르는 단어들입니다. 각 단어들의 정보를 소개해주세요!

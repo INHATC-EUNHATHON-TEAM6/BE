@@ -50,7 +50,7 @@ public class FeedbackService {
 
     public FeedbacksDto feedbackScrapActivity(ScrapActivityDto activity) throws JsonProcessingException {
         // ❗️하드코딩!
-        Long userId = 1L;
+        long userId = 1L;
         Optional<Article> optionalArticle = articleRepository.findById(activity.getArticleId());
         Article article = optionalArticle.orElseThrow(
                 () -> new IllegalArgumentException("해당 Article 없음")
@@ -111,33 +111,18 @@ public class FeedbackService {
                 (String)secondRequest.get("tendency"),
                 (String)secondRequest.get("feedback"))
         );
-        for (FeedbackDto tmp : feedbacks) {
+        for (FeedbackDto feedback : feedbacks) {
             ScrapActivities scrapActivities = new ScrapActivities();
             scrapActivities.setUserId(userId);
             scrapActivities.setArticleId(article.getArticleId());
-            scrapActivities.setComparisonType(tmp.getActivityType());
-            scrapActivities.setUserAnswer(tmp.getUserAnswer());
-            scrapActivities.setAiAnswer(tmp.getAiAnswer());
-            scrapActivities.setAiFeedback(tmp.getAiFeedback());
-            scrapActivities.setEvaluationScore(tmp.getEvaluationScore());
-            ScrapActivities saved = feedbackRepository.save(scrapActivities);
-            System.out.println(saved.toString());
+            scrapActivities.setComparisonType(feedback.getActivityType());
+            scrapActivities.setUserAnswer(feedback.getUserAnswer());
+            scrapActivities.setAiAnswer(feedback.getAiAnswer());
+            scrapActivities.setAiFeedback(feedback.getAiFeedback());
+            scrapActivities.setEvaluationScore(feedback.getEvaluationScore());
+            feedbackRepository.save(scrapActivities);
         }
         return new FeedbacksDto(article.getContent(), feedbacks);
-    }
-
-    private FeedbackDto compareTitle(String userTitle, String aiTitle, String aiFeedback) {
-        EmbeddingResponse userTitleEmbeddingResponse = embeddingModel.embedForResponse(List.of(userTitle));
-        EmbeddingResponse aiTitleEmbeddingResponse = embeddingModel.embedForResponse(List.of(aiTitle));
-        float[] userTitleVector = userTitleEmbeddingResponse.getResults().get(0).getOutput();
-        float[] aiTitleVector = aiTitleEmbeddingResponse.getResults().get(0).getOutput();
-        double score = (CosineSimilarity.calculate(userTitleVector, aiTitleVector) + 1) / 2.0;
-        return new FeedbackDto(ActivityType.TITLE, userTitle, aiTitle, aiFeedback, Double.toString(score));
-    }
-
-    private FeedbackDto compareSummary(String userSummary, String aiSummary, String aiFeedback) {
-        double score = RougeCalculator.calculateRouge2(userSummary, aiSummary).getFMeasure();
-        return new FeedbackDto(ActivityType.SUMMARY, userSummary, aiSummary, aiFeedback, Double.toString(score));
     }
 
     private FeedbackDto compareCategory(String userCategory, String aiCategory, String aiFeedback) {
@@ -147,6 +132,15 @@ public class FeedbackService {
         float[] aiCategoryVector = aiCategoryEmbeddingResponse.getResults().get(0).getOutput();
         double score = (CosineSimilarity.calculate(userCategoryVector, aiCategoryVector) + 1) / 2.0;
         return new FeedbackDto(ActivityType.CATEGORY, userCategory, aiCategory, aiFeedback, Double.toString(score));
+    }
+
+    private FeedbackDto compareTitle(String userTitle, String aiTitle, String aiFeedback) {
+        EmbeddingResponse userTitleEmbeddingResponse = embeddingModel.embedForResponse(List.of(userTitle));
+        EmbeddingResponse aiTitleEmbeddingResponse = embeddingModel.embedForResponse(List.of(aiTitle));
+        float[] userTitleVector = userTitleEmbeddingResponse.getResults().get(0).getOutput();
+        float[] aiTitleVector = aiTitleEmbeddingResponse.getResults().get(0).getOutput();
+        double score = (CosineSimilarity.calculate(userTitleVector, aiTitleVector) + 1) / 2.0;
+        return new FeedbackDto(ActivityType.TITLE, userTitle, aiTitle, aiFeedback, Double.toString(score));
     }
 
     private FeedbackDto compareKeywords(List<String> userKeywords, List<String> aiKeywords, String aiFeedback) {
@@ -161,6 +155,11 @@ public class FeedbackService {
     // OpenAI API를 통해 국립국어원 API로 검색 안 되는 어휘들을 처리하는 로직은 추후에 적용
     private FeedbackDto getWordsToLearn(List<String> vocabularies) {
         return new FeedbackDto(ActivityType.UNKNOWN_WORD, String.join(",", vocabularies), "", "", "");
+    }
+
+    private FeedbackDto compareSummary(String userSummary, String aiSummary, String aiFeedback) {
+        double score = RougeCalculator.calculateRouge2(userSummary, aiSummary).getFMeasure();
+        return new FeedbackDto(ActivityType.SUMMARY, userSummary, aiSummary, aiFeedback, Double.toString(score));
     }
 
     private FeedbackDto checkUserComment(String userComment, String tendency, String aiFeedback) {

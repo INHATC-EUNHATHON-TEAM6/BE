@@ -1,11 +1,11 @@
 package com.words_hanjoom.domain.feedback.entity;
 
 public enum ActivityType {
-    TITLE,
-    SUMMARY,
     CATEGORY,
+    TITLE,
     KEYWORD,
     UNKNOWN_WORD,
+    SUMMARY,
     THOUGHT_SUMMARY
 }
 
