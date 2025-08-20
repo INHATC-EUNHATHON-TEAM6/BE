@@ -31,7 +31,15 @@ public class TokenProvider {
     // key 객체를 JWT 서명용 비밀키로 설정
     @PostConstruct
     protected void init() {
-        key = new SecretKeySpec(secret.getBytes(), "HmacSHA256");
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("jwt.secret is missing/blank");
+        }
+        // HS256 권장: 최소 32바이트
+        key = io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                secret.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+
+//        key = new SecretKeySpec(secret.getBytes(), "HmacSHA256");
     }
 
     // 토큰 생성
@@ -41,7 +49,6 @@ public class TokenProvider {
         String loginId = authentication.getName();
 
         return Jwts.builder()
-                .setSubject(authentication.getName())
                 .setSubject(loginId)
                 .setIssuedAt(new Date(now))
                 .setExpiration(new Date(now + validity))

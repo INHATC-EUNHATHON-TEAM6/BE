@@ -28,26 +28,53 @@ public class AuthenticationFilter extends OncePerRequestFilter {
 
     private final TokenProvider tokenProvider;
 
+    // Swagger, 공개경로는 애초에 필터 제외
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String u = request.getRequestURI();
+        return u.startsWith("/v3/api-docs")              // /v3/api-docs, /v3/api-docs/swagger-config 모두 포함
+                || u.startsWith("/swagger-ui")               // ✅ /** 제거
+                || u.startsWith("/swagger-resources")        // ✅
+                || u.startsWith("/webjars")                  // ✅
+                || u.equals("/swagger-ui.html")
+                || u.equals("/actuator/health")
+                || u.equals("/error")
+                || u.startsWith("/api/auth")
+                || u.equals("/test")
+                || u.equals("/favicon.ico");
+    }
+
+
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        // AUTHORIZATION 헤더에서 Bearer Token 추출
+        // 1) AUTHORIZATION 헤더에서 Bearer Token 추출
         String accessToken = HeaderUtil.getAccessTokenFromHeader(request);
 
-        Claims claims = tokenProvider.getClaims(accessToken);
-
-        // 토큰이 유효하면 클레임을 가져옴
-        if (claims != null) {
-            // claims 이용하여 Authentication 객체를 생성
-            Authentication authentication = tokenProvider.getAuthentication(claims, accessToken);
-
-            // SecurityContextHolder에 Authentication 객체를 저장
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+        // 2) 토큰이 없거나 빈 문자열이면 익명으로 통과
+        if (accessToken == null || accessToken.isBlank()) {
+            log.info("No access token found in request header.");
+            filterChain.doFilter(request, response);
+            return;
         }
 
+        // 3) JWT 토큰 파싱
+        Claims claims = tokenProvider.getClaims(accessToken);
+        // 4) 토큰이 유효하지 않으면 익명으로 통과
+        if (claims != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            // claims 이용하여 Authentication 객체를 생성
+            Authentication auth = tokenProvider.getAuthentication(claims, accessToken);
+
+            // SecurityContextHolder에 Authentication 객체를 저장
+            if(auth != null) {
+                SecurityContextHolder.getContext().setAuthentication(auth);
+            }
+        }
+
+        // 5) 다음 필터로 요청 전달
         filterChain.doFilter(request, response);
     }
 }
