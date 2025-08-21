@@ -65,148 +65,160 @@ public class UnknownWordService {
     // 단어 1개만 새 트랜잭션으로 저장
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<SavedWord> saveOne(Long userId, String raw) {
-
-        // 0) 입력 값 점검 + 정규화
+        // 0) 입력 정규화
         if (raw == null || raw.isBlank()) return Optional.empty();
         final String surface = normalizeKo(raw);
         final String plain   = surface.replaceAll("[-·ㆍ‐–—]", "");
         log.debug("[WORD] saveOne userId={} surface='{}' plain='{}'", userId, surface, plain);
 
-        // 1) DB 선조회(동일 표기 또는 유사 표기)
+        // 1) DB 선조회
         Optional<Word> existing = wordRepository.findByWordName(surface);
         if (existing.isEmpty()) existing = wordRepository.findLooselyByName(surface, plain);
-
         if (existing.isPresent()) {
             Word w = existing.get();
             log.info("[WORD] DB HIT (NO API) '{}' → wordId={}", surface, w.getWordId());
-            WordbookWordId id = new WordbookWordId(
-                    wordbookRepository.getOrCreateEntity(userId).getWordbookId(),
-                    w.getWordId());
-            if (!wordbookWordRepository.existsById(id)) {
-                wordbookWordRepository.save(WordbookWord.builder().id(id).build());
-            }
+            mapIntoWordbook(userId, w.getWordId());
             return Optional.of(new SavedWord(surface, w.getWordName(), w.getWordId()));
         }
 
         // 2) 사전 조회 (국어원 → 실패 시 OpenAI 폴백)
         log.debug("[WORD] DB MISS surface='{}' – calling DICT API", surface);
-
-        DictEntry entry = null;
-        try {
-            entry = dictClient.quickLookup(surface).blockOptional().orElse(null);
-            if (entry == null) {
-                log.info("[WORD] DICT MISS – try OpenAI fallback for '{}'", surface);
-                entry = aiDictionaryClient.defineFromAi(surface, null)
-                        .onErrorResume(e -> {  // 안전망 한 번 더
-                            log.warn("[AI] fallback error for '{}': {}", surface, e.toString());
-                            return Mono.empty();
-                        })
-                        .blockOptional().orElse(null);
-            }
-        } catch (Exception e) {                // ★ 어떤 예외도 트랜잭션 밖으로 내보내지 않음
-            log.warn("[WORD] lookup error for '{}': {}", surface, e.toString());
-            entry = null;
-        }
+        DictEntry entry = fetchDictOrAi(surface);
 
         if (entry == null) {
             log.debug("[WORD] DICT/AI MISS for '{}' – skip", surface);
             return Optional.empty();
         }
 
-
-
-        // 3) 결과 정리(널/길이/기본값 보정)
+        // 3) 결과 정리
         final String wordName   = cut(entry.getLemma(), LEN_WORD_NAME);
         final String definition = cut(entry.getDefinition(), LEN_DEF);
         final String example    = cut(entry.getExample(), LEN_EXAMPLE);
-        final String cats       = (entry.getCategories()==null || entry.getCategories().isBlank())
-                ? "일반" : entry.getCategories();
-
-        final Long   targetCode = Optional.ofNullable(entry.getTargetCode()).orElse(0L);  // AI면 0
-
-        // AI(entry.targetCode==0)면 sense_no 자동 배정
-        Integer senseNo = entry.getSenseNo();
-        if (targetCode == 0L) {
-            int next = Optional.ofNullable(wordRepository.findMaxAiSenseNoByName(wordName)).orElse(0) + 1;
-            senseNo = next; // auto-boxing -> Integer
-        }
-        final int senseNoSafe = (senseNo == null) ? 0 : senseNo; // 비교/세팅용 primitive
-
-        final java.util.List<String> entrySyns = entry.getSynonyms() == null ? java.util.List.of() : entry.getSynonyms();
-        final java.util.List<String> entryAnts = entry.getAntonyms() == null ? java.util.List.of() : entry.getAntonyms();
+        final String cats       = (entry.getCategories()==null || entry.getCategories().isBlank()) ? "일반" : entry.getCategories();
+        final Long   targetCode = Optional.ofNullable(entry.getTargetCode()).orElse(0L); // AI면 0
+        final List<String> entrySyns = entry.getSynonyms() == null ? List.of() : entry.getSynonyms();
+        final List<String> entryAnts = entry.getAntonyms() == null ? List.of() : entry.getAntonyms();
         final byte shoulderNo = entry.getShoulderNo();
 
+        // ★ AI(targetCode=0) 전역 sense_no 할당 (전역 유니크 보장)
+        Integer senseNo = entry.getSenseNo();
+        if (targetCode == 0L) {
+            senseNo = allocateGlobalAiSenseNo(); // (0, MAX+1)
+        }
+        final int senseNoSafe = (senseNo == null) ? 0 : senseNo;
+
         log.info("[WORD] resolved '{}' → lemma='{}', tc={}, senseNo={}, cats='{}'",
-                surface, wordName, targetCode, senseNo, cats);
+                surface, wordName, targetCode, senseNoSafe, cats);
 
-        // 4) 동일 표제어로 저장(있으면 보정/병합, 없으면 신규)
+        // 4) 동일 표제어 있으면 병합/보정, 없으면 신규
         Word saved = wordRepository.findByWordName(wordName)
-                .map(w -> {
-                    boolean dirty = false;
-
-                    // 카테고리 보정
-                    String curCat = w.getWordCategory();
-                    boolean needCatUpdate =
-                            curCat == null || curCat.isBlank()
-                                    || "일반어".equals(curCat)
-                                    || NUM_CSV.matcher(curCat).matches(); // 패턴 상수: Pattern.compile("^\\d+(,\\d+)*$")
-
-                    if (needCatUpdate && !cats.isBlank() && !cats.equals(curCat)) {
-                        w.setWordCategory(cats);
-                        dirty = true;
-                    }
-
-                    if (w.getTargetCode() == null || w.getTargetCode() == 0L) {
-                        w.setTargetCode(targetCode); dirty = true;
-                    }
-                    if ((w.getDefinition() == null || w.getDefinition().isBlank()) && !definition.isBlank()) {
-                        w.setDefinition(definition); dirty = true;
-                    }
-                    if ((w.getExample() == null || w.getExample().isBlank()) && !example.isBlank()) {
-                        w.setExample(example); dirty = true;
-                    }
-                    if (w.getShoulderNo() == 0 && shoulderNo != 0) {
-                        w.setShoulderNo(shoulderNo); dirty = true;
-                    }
-
-                    // getSenseNo()가 원시형이면 0만 체크, 객체형이면 null/0 체크
-                    if (w.getSenseNo() == null || w.getSenseNo() == 0) {
-                        w.setSenseNo(senseNoSafe); // Integer/primitive 모두 OK (auto-boxing)
-                    }
-
-                    String mergedSyn = mergeCsv(w.getSynonym(), entrySyns);
-                    if (!java.util.Objects.equals(nzCsv(w.getSynonym()), mergedSyn)) {
-                        w.setSynonym(mergedSyn); dirty = true;
-                    }
-
-                    String mergedAnt = mergeCsv(w.getAntonym(), entryAnts);
-                    if (!java.util.Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) {
-                        w.setAntonym(mergedAnt); dirty = true;
-                    }
-
-                    return dirty ? wordRepository.save(w) : w;
-                })
-                .orElseGet(() -> wordRepository.save(Word.builder()
-                        .wordName(wordName)
-                        .definition(definition)
-                        .wordCategory(cats)
-                        .shoulderNo(shoulderNo)
-                        .example(example)
-                        .targetCode(targetCode)   // NOT NULL (0 허용)
-                        .senseNo(senseNoSafe)        // NOT NULL
-                        .synonym(joinList(entrySyns))
-                        .antonym(joinList(entryAnts))
-                        .build()));
+                .map(w -> mergeIntoExistingWord(w, targetCode, senseNoSafe, definition, example, cats, shoulderNo, entrySyns, entryAnts))
+                .orElseGet(() -> saveNewWordWithRetry(
+                        Word.builder()
+                                .wordName(wordName)
+                                .definition(definition)
+                                .wordCategory(cats)
+                                .shoulderNo(shoulderNo)
+                                .example(example)
+                                .targetCode(targetCode)    // NOT NULL (0 허용)
+                                .senseNo(senseNoSafe)      // NOT NULL
+                                .synonym(joinList(entrySyns))
+                                .antonym(joinList(entryAnts))
+                                .build(),
+                        targetCode
+                ));
 
         // 5) 단어장 매핑
-        WordbookWordId id = new WordbookWordId(
-                wordbookRepository.getOrCreateEntity(userId).getWordbookId(),
-                saved.getWordId());
+        mapIntoWordbook(userId, saved.getWordId());
+        return Optional.of(new SavedWord(surface, saved.getWordName(), saved.getWordId()));
+    }
+
+    /** 국어원 우선 조회, 실패 시 OpenAI 폴백 */
+    private DictEntry fetchDictOrAi(String surface) {
+        try {
+            DictEntry entry = dictClient.quickLookup(surface).blockOptional().orElse(null);
+            if (entry != null) return entry;
+            log.info("[WORD] DICT MISS – try OpenAI fallback for '{}'", surface);
+            return aiDictionaryClient.defineFromAi(surface, null)
+                    .onErrorResume(e -> { log.warn("[AI] fallback error for '{}': {}", surface, e.toString()); return Mono.empty(); })
+                    .blockOptional().orElse(null);
+        } catch (Exception e) {
+            log.warn("[WORD] lookup error for '{}': {}", surface, e.toString());
+            return null;
+        }
+    }
+
+    /** target_code=0(=AI) 전역 sense_no = MAX+1 */
+    @Transactional(propagation = Propagation.MANDATORY)
+    protected int allocateGlobalAiSenseNo() {
+        Integer max = wordRepository.findMaxSenseNoByTargetCode(0L);
+        return (max == null ? 0 : max) + 1;
+    }
+
+    /** 신규 Word 저장 시, AI 전역 유니크 충돌에 대해 짧게 재시도 */
+    private Word saveNewWordWithRetry(Word candidate, Long targetCode) {
+        if (!Objects.equals(targetCode, 0L)) {
+            return wordRepository.save(candidate);
+        }
+        for (int attempt = 1; attempt <= AI_SAVE_RETRIES; attempt++) {
+            try {
+                return wordRepository.save(candidate);
+            } catch (DataIntegrityViolationException e) {
+                if (isUqTargetSenseDup(e)) {
+                    // (0, sense_no) 충돌 → 새 sense_no 재할당 후 재시도
+                    int next = allocateGlobalAiSenseNo();
+                    candidate.setSenseNo(next);
+                    log.warn("[WORD] AI sense_no dup → retry {}/{} with sense_no={}", attempt, AI_SAVE_RETRIES, next);
+                    continue;
+                }
+                throw e;
+            }
+        }
+        // 최종 실패 시 그대로 던짐
+        return wordRepository.save(candidate);
+    }
+
+    private boolean isUqTargetSenseDup(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            String msg = t.getMessage();
+            if (msg != null && msg.contains("Duplicate entry") && msg.contains("uq_words_target_sense")) return true;
+            t = t.getCause();
+        }
+        return false;
+    }
+
+    private Word mergeIntoExistingWord(Word w, Long targetCode, int senseNoSafe,
+                                       String definition, String example, String cats, byte shoulderNo,
+                                       List<String> entrySyns, List<String> entryAnts) {
+        boolean dirty = false;
+
+        String curCat = w.getWordCategory();
+        boolean needCatUpdate = curCat == null || curCat.isBlank() || "일반어".equals(curCat) || NUM_CSV.matcher(curCat).matches();
+        if (needCatUpdate && !cats.isBlank() && !cats.equals(curCat)) { w.setWordCategory(cats); dirty = true; }
+
+        if (w.getTargetCode() == null || w.getTargetCode() == 0L) { w.setTargetCode(targetCode); dirty = true; }
+        if ((w.getDefinition() == null || w.getDefinition().isBlank()) && !definition.isBlank()) { w.setDefinition(definition); dirty = true; }
+        if ((w.getExample() == null || w.getExample().isBlank()) && !example.isBlank()) { w.setExample(example); dirty = true; }
+        if (w.getShoulderNo() == 0 && shoulderNo != 0) { w.setShoulderNo(shoulderNo); dirty = true; }
+
+        if (w.getSenseNo() == null || w.getSenseNo() == 0) { w.setSenseNo(senseNoSafe); dirty = true; }
+
+        String mergedSyn = mergeCsv(w.getSynonym(), entrySyns);
+        if (!Objects.equals(nzCsv(w.getSynonym()), mergedSyn)) { w.setSynonym(mergedSyn); dirty = true; }
+
+        String mergedAnt = mergeCsv(w.getAntonym(), entryAnts);
+        if (!Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) { w.setAntonym(mergedAnt); dirty = true; }
+
+        return dirty ? wordRepository.save(w) : w;
+    }
+
+    private void mapIntoWordbook(Long userId, Long wordId) {
+        Wordbook wb = wordbookRepository.getOrCreateEntity(userId);
+        WordbookWordId id = new WordbookWordId(wb.getWordbookId(), wordId);
         if (!wordbookWordRepository.existsById(id)) {
             wordbookWordRepository.save(WordbookWord.builder().id(id).build());
         }
-
-        return Optional.of(new SavedWord(surface, saved.getWordName(), saved.getWordId()));
     }
 
     private List<String> tokenizeUnknownWords(String text) {
