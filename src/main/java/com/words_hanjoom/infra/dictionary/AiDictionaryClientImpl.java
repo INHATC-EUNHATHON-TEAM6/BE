@@ -4,7 +4,10 @@ package com.words_hanjoom.infra.dictionary;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.words_hanjoom.domain.wordbooks.dto.response.DictEntry;
+import jakarta.annotation.Nullable;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,10 +15,9 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import com.jayway.jsonpath.JsonPath;
+import java.time.Duration;
+import java.util.*;
 
 @Slf4j
 @Component
@@ -24,84 +26,82 @@ public class AiDictionaryClientImpl implements AiDictionaryClient {
 
     @Qualifier("openAiWebClient")
     private final WebClient openAiWebClient;
-    private final ObjectMapper om;
 
     @Value("${openai.model}")
     private String openAiModel;
 
     @Override
-    public Mono<DictEntry> defineFromAi(String surface, String context) {
-        // Responses API + Structured Output(JSON Schema)
-        Map<String, Object> schema = Map.of(
-                "name", "DictEntry",
-                "schema", Map.of(
-                        "type", "object",
-                        "additionalProperties", false,
-                        "required", List.of("lemma", "definition"),
-                        "properties", Map.of(
-                                "lemma",      Map.of("type","string"),
-                                "definition", Map.of("type","string"),
-                                "example",    Map.of("type","string"),
-                                "synonyms",   Map.of("type","array","items", Map.of("type","string")),
-                                "antonyms",   Map.of("type","array","items", Map.of("type","string")),
-                                // 카테고리 명 배열(예: ["심리","정보·통신"])
-                                "categories", Map.of("type","array","items", Map.of("type","string"))
-                        )
-                ),
-                "strict", true
-        );
+    public Mono<DictEntry> defineFromAi(String surface, @Nullable String context) {
 
         String prompt = """
-            당신은 한국어 사전 편찬자입니다.
-            표제어: %s
-            맥락(선택): %s
+        당신은 한국어 사전 편찬자입니다.
+        표제어: %s
+        맥락(선택): %s
+        
+        표제어의 '정의'를 간결한 한 문장으로 쓰고,
+        '예문' 1개, 가능한 경우 '유의어'와 '반의어'를 한국어로 제시하세요.
+        'categories'에는 한국 표준 분야명을 사용(예: 심리, 정보·통신). 없으면 비워두세요.
+        응답은 아래와 같은 JSON 객체 형식으로만 제공해야 합니다.
+        {
+            "lemma": "...",
+            "definition": "...",
+            "example": "...",
+            "synonyms": ["..."],
+            "antonyms": ["..."],
+            "categories": ["..."]
+        }
+        """.formatted(surface, context == null ? "" : context);
 
-            표제어의 '정의'를 간결한 한 문장으로 쓰고,
-            '예문' 1개, 가능한 경우 '유의어/반의어'를 한국어로 제시하세요.
-            'categories'에는 한국 표준 분야명을 사용(예: 심리, 정보·통신). 없으면 비워두세요.
-            결과는 반드시 JSON 형식으로만 응답하세요.
-            """.formatted(surface, context == null ? "" : context);
-
-        Map<String,Object> body = new HashMap<>();
+        Map<String, Object> body = new HashMap<>();
         body.put("model", openAiModel);
-        body.put("input", prompt);
-        body.put("response_format", Map.of("type","json_schema","json_schema", schema)); // 구조화 출력 :contentReference[oaicite:1]{index=1}
+        body.put("response_format", Map.of("type", "json_object")); // JSON 모드 활성화
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", "You are a helpful assistant that responds in JSON format."),
+                Map.of("role", "user", "content", prompt)
+        ));
 
         return openAiWebClient.post()
-                .uri("/responses") // Responses API 엔드포인트 :contentReference[oaicite:2]{index=2}
+                .uri("/chat/completions") // 엔드포인트 변경
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .bodyValue(body)
                 .retrieve()
+                .onStatus(s -> s.is4xxClientError() || s.is5xxServerError(),
+                        resp -> resp.bodyToMono(String.class)
+                                .doOnNext(b -> log.warn("[AI] HTTP {} {}", resp.statusCode(), b))
+                                .then(Mono.error(new IllegalStateException("OpenAI error"))))
                 .bodyToMono(String.class)
-                .flatMap(resp -> {
-                    try {
-                        JsonNode root = om.readTree(resp);
-                        // output_text 또는 첫 메시지의 텍스트 꺼내기 (Responses 표준 필드)
-                        String json = null;
-                        if (root.has("output_text")) {
-                            json = root.path("output_text").asText();
-                        } else if (root.path("output").isArray()) {
-                            JsonNode c = root.path("output").get(0).path("content");
-                            if (c.isArray() && c.size()>0) json = c.get(0).path("text").asText(null);
-                        }
-                        if (json == null || json.isBlank()) {
-                            log.warn("[AI] empty output_text: {}", resp);
-                            return Mono.empty();
-                        }
-                        JsonNode j = om.readTree(json);
+                .doOnNext(json -> log.info("[AI] Received JSON: {}", json))
+                .timeout(Duration.ofSeconds(10))
+                .onErrorResume(e -> { log.warn("[AI] error: {}", e.toString()); return Mono.empty(); })
+                .flatMap(json -> {
+                    String jsonContent = com.jayway.jsonpath.JsonPath.read(json, "$.choices[0].message.content");
+                    if (jsonContent == null || jsonContent.isBlank()) return Mono.empty();
 
-                        return Mono.just(DictEntry.builder()
-                                .lemma(j.path("lemma").asText(surface))
-                                .definition(j.path("definition").asText(""))
-                                .example(j.path("example").asText(""))
-                                .synonyms(readList(j,"synonyms"))
-                                .antonyms(readList(j,"antonyms"))
-                                .categories(joinCsv(readList(j,"categories"))) // 한글 CSV. 없으면 서비스에서 '일반' 처리
-                                .targetCode(0L)   // AI 산출 표식
+                    ObjectMapper om = new ObjectMapper();
+                    try {
+                        JsonNode node = om.readTree(jsonContent); // 직접 JSON 파싱
+                        String lemma      = optText(node, "lemma", null);
+                        String definition = optText(node, "definition", null);
+                        String example    = optText(node, "example", null);
+                        List<String> synonyms = toStrList(node.get("synonyms"));
+                        List<String> antonyms = toStrList(node.get("antonyms"));
+                        List<String> catsList = toStrList(node.get("categories"));
+
+                        if (lemma == null || definition == null) return Mono.empty();
+
+                        DictEntry entry = DictEntry.builder()
+                                .lemma(lemma)
+                                .definition(definition)
+                                .example(example)
+                                .synonyms(synonyms)
+                                .antonyms(antonyms)
+                                .categories(String.join(",", catsList))
+                                .targetCode(0L)
+                                .senseNo(null)
                                 .shoulderNo((byte)0)
-                                .senseNo(null)    // 서비스에서 부여
-                                .build());
+                                .build();
+                        return Mono.just(entry);
                     } catch (Exception e) {
                         log.warn("[AI] parse error: {}", e.toString());
                         return Mono.empty();
@@ -109,15 +109,15 @@ public class AiDictionaryClientImpl implements AiDictionaryClient {
                 });
     }
 
-    private static List<String> readList(JsonNode j, String field) {
-        return j.has(field) && j.path(field).isArray()
-                ? java.util.stream.StreamSupport.stream(j.path(field).spliterator(), false)
-                .map(n -> n.asText())
-                .filter(s -> s!=null && !s.isBlank()).distinct().toList()
-                : List.of();
+    private static String optText(JsonNode n, String field, String defVal) {
+        JsonNode v = (n == null) ? null : n.get(field);
+        return (v != null && v.isTextual()) ? v.asText() : defVal;
     }
-    private static String joinCsv(List<String> xs) {
-        if (xs==null || xs.isEmpty()) return "";
-        return String.join(", ", xs);
+
+    private static List<String> toStrList(JsonNode arr) {
+        if (arr == null || !arr.isArray()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (JsonNode e : arr) if (e != null && e.isTextual()) out.add(e.asText());
+        return out;
     }
 }
