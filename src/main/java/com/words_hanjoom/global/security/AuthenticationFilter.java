@@ -30,15 +30,6 @@ public class AuthenticationFilter extends OncePerRequestFilter {
     );
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
-        String uri = request.getRequestURI();
-        // ★ 테스트용 엔드포인트는 무조건 필터 제외
-        if (uri.startsWith("/api/dev/")) return true;
-        // 기존 로직 유지
-        return super.shouldNotFilter(request);
-    }
-
-    @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws IOException, ServletException {
         log.info("[AuthFilter] filtering uri={}", req.getRequestURI());

@@ -66,12 +66,12 @@ public class UnknownWordService {
         return set.isEmpty() ? "" : String.join(", ", set);
     }
 
-    // ★ 단어 1개만 새 트랜잭션으로 저장
+    // 단어 1개만 새 트랜잭션으로 저장
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<SavedWord> saveOne(Long userId, String raw) {
 
 
-        // ✅ 수정: API 호출 전에 입력 값이 유효한지 확인
+        // API 호출 전에 입력 값이 유효한지 확인
         if (raw == null || raw.isBlank()) {
             log.debug("[WORD] skip blank token (userId={}): '{}'", userId, raw);
             return Optional.empty();
@@ -178,7 +178,7 @@ public class UnknownWordService {
                         dirty = true;
                     }
 
-                    // ✅ 유의어/반의어 업데이트 보정: 빈 값이면 채우고, 값이 있으면 병합(중복 제거)
+                    // 유의어/반의어 업데이트 보정: 빈 값이면 채우고, 값이 있으면 병합(중복 제거)
                     String mergedSyn = mergeCsv(w.getSynonym(), entry.getSynonyms());
                     if (!Objects.equals((w.getSynonym() == null ? "" : w.getSynonym()), mergedSyn)) {
                         w.setSynonym(mergedSyn); dirty = true;

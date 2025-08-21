@@ -18,7 +18,7 @@ public class DictEntry {
     private Long targetCode; // target_code
     private byte shoulderNo; // 어깨번호(sup_no)
     private String example; // 예문
-    private Integer  senseNo;     // ✅ sense_no (의미 번호)
+    private Integer  senseNo;     // sense_no (의미 번호)
 
     private java.util.List<String> synonyms;
     private java.util.List<String> antonyms;

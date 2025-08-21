@@ -20,7 +20,7 @@ public class DictionaryClientConfig {
 
     @Bean("dicWebClient")
     public WebClient dicWebClient(WebClient.Builder builder) {
-        // ✅ 수정: baseUrl이 null인지 확인하고 오류 발생
+        // baseUrl이 null인지 확인하고 오류 발생
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalArgumentException("nikl.base-url is not set in application.properties");
         }

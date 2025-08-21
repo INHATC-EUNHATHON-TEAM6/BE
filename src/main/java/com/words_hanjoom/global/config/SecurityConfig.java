@@ -49,7 +49,7 @@ public class SecurityConfig {
     @Bean
     public FilterRegistrationBean<AuthenticationFilter> authenticationFilterRegistration(AuthenticationFilter f) {
         FilterRegistrationBean<AuthenticationFilter> reg = new FilterRegistrationBean<>(f);
-        reg.setEnabled(false); // ✅ 서블릿 체인 자동 등록 막고, Security 체인에서만 돌게 함
+        reg.setEnabled(false); // 서블릿 체인 자동 등록 막고, Security 체인에서만 돌게 함
         return reg;
     }
 }

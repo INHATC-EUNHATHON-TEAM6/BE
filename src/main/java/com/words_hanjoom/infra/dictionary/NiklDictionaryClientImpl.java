@@ -93,7 +93,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
-                        .queryParam("method", "target_code")     // ✅ 공식 라우트
+                        .queryParam("method", "target_code")     // 공식 라우트
                         .queryParam("target_code", targetCode)
                         .build())
                 .accept(MediaType.APPLICATION_JSON)
@@ -104,7 +104,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
-                        .queryParam("type_search", "view")       // ✅ 발견한 호환 라우트
+                        .queryParam("type_search", "view")       // 폴백 라우트
                         .queryParam("method", "TARGET_CODE")
                         .queryParam("q", targetCode)
                         .build())
@@ -113,7 +113,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 .bodyToMono(String.class);
 
         return primary
-                .onErrorResume(e -> fallback)                // 1) HTTP 에러면 폴백
+                .onErrorResume(e -> fallback)                // HTTP 에러면 폴백
                 .flatMap(body -> {
                     try {
                         ViewResponse vr = read(body, ViewResponse.class);
@@ -196,8 +196,6 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                             return Mono.empty();
                         }
                         // ===== DEBUG 끝 =====
-
-                        // ↓↓↓ 아래부터 기존 코드 계속...
                         // 가장 적합한 item 고르기 (완전일치 우선, 아니면 첫번째)
                         JsonNode item = null;
                         for (JsonNode it : items) {
@@ -218,7 +216,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                         String exampleFromSearch = pickExample(senseFromSearch);
                         byte supNo = (byte) item.path("sup_no").asInt(0);
 
-                        // ★ 추가: search 응답에서도 syn/ant 뽑아두기
+                        // 추가: search 응답에서도 syn/ant 뽑아두기
                         List<String> synFromSearch = collectLexical(item, senseFromSearch, true);
                         List<String> antFromSearch = collectLexical(item, senseFromSearch, false);
 

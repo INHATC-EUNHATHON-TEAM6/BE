@@ -19,7 +19,7 @@ public class DictionaryService {
 
     private final NiklDictionaryClient dictClient;
 
-    // ✅ @RequiredArgsConstructor 미사용 시 수동 생성자
+    // @RequiredArgsConstructor 미사용 시 수동 생성자
     public DictionaryService(NiklDictionaryClient dictClient) {
         this.dictClient = dictClient;
     }
