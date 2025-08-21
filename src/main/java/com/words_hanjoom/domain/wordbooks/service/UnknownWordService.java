@@ -128,7 +128,7 @@ public class UnknownWordService {
         final String definition = cut(entry.getDefinition(), LEN_DEF);
         final String example = cut(entry.getExample(), LEN_EXAMPLE);
         final Long   targetCode = entry.getTargetCode() != null && entry.getTargetCode() > 0 ? entry.getTargetCode() : null;
-        final Short  senseNo = entry.getSenseNo();
+        final Integer  senseNo = entry.getSenseNo();
 
         log.debug("[SAVE] surface={}, lemma={}, tc={}, senseNo={}",
                 surface, entry.getLemma(), entry.getTargetCode(), entry.getSenseNo());

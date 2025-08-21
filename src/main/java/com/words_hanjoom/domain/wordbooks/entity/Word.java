@@ -23,7 +23,7 @@ public class Word {
     private Long targetCode; // ✅ 추가
 
     @Column(name = "sense_no", nullable = false)
-    private Short senseNo; // ✅ 추가
+    private Integer senseNo; // ✅ 추가
 
     @Column(name = "word_name", length = 100, nullable = false)
     private String wordName;

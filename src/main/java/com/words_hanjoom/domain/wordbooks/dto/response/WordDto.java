@@ -12,7 +12,7 @@ public record WordDto(
         String wordCategory,
         Byte   shoulderNo,
         Long   targetCode,
-        Short  senseNo
+        Integer  senseNo
 ) {
     private static final Pattern STD_MARKS = Pattern.compile("[-·ㆍ‐–—]");
 

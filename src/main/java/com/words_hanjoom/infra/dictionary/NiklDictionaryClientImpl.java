@@ -302,7 +302,10 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
             if (senseNode == null || senseNode.isMissingNode() || senseNode.isNull()) return Mono.empty();
 
             String example = pickExample(senseNode);
-            Short senseNo = toShortOrNull(senseNode.path("sense_code").asText(null));
+            Integer senseNo = firstSenseCode(senseNode);
+            if (senseNo == null) {
+                senseNo = firstSenseCodeInItem(chosen); // 같은 item 내 다른 sense에 있으면 그것이라도 사용
+            }
             List<String> synonyms = collectLexical(chosen, senseNode, true);
             List<String> antonyms = collectLexical(chosen, senseNode, false);
 
@@ -347,9 +350,9 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 .ifPresent(v -> ub.queryParam(name, v));
     }
 
-    private static Short toShortOrNull(String s) {
+    private static Integer toIntOrNull(String s) {
         if (isBlank(s)) return null;
-        try { return Short.valueOf(s); } catch (Exception e) { return null; }
+        try { return Integer.valueOf(s.trim()); } catch (Exception e) { return null; }
     }
 
     private static String wildcardMiddle(String q) {
@@ -430,5 +433,28 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         return new ArrayList<>(out);
     }
 
-    record SenseInfo(String example, Short senseNo, List<String> synonyms, List<String> antonyms) {}
+    private static Integer firstSenseCode(JsonNode sense) {
+        if (isMissing(sense)) return null;
+        // 선호 순서: sense_code → sense_no (응답 변주 대비)
+        Integer v = toIntOrNull(sense.path("sense_code").asText(null));
+        if (v != null) return v;
+        return toIntOrNull(sense.path("sense_no").asText(null));
+    }
+    private static Integer firstSenseCodeInItem(JsonNode item) {
+        for (JsonNode pos : asList(item.path("word_info").path("pos_info"))) {
+            for (JsonNode comm : asList(pos.path("comm_pattern_info"))) {
+                for (JsonNode s : asList(comm.path("sense_info"))) {
+                    Integer v = firstSenseCode(s);
+                    if (v != null) return v;
+                }
+            }
+        }
+        for (JsonNode s : asList(item.path("sense_info"))) {
+            Integer v = firstSenseCode(s);
+            if (v != null) return v;
+        }
+        return null;
+    }
+
+    record SenseInfo(String example, Integer senseNo, List<String> synonyms, List<String> antonyms) {}
 }
