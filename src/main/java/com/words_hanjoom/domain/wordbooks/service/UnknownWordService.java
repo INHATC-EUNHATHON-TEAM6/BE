@@ -127,8 +127,8 @@ public class UnknownWordService {
         final String wordName = cut(entry.getLemma(), LEN_WORD_NAME);
         final String definition = cut(entry.getDefinition(), LEN_DEF);
         final String example = cut(entry.getExample(), LEN_EXAMPLE);
-        final Long   targetCode = entry.getTargetCode() != null && entry.getTargetCode() > 0 ? entry.getTargetCode() : null;
-        final Integer  senseNo = entry.getSenseNo();
+        final Long    targetCode = Optional.ofNullable(entry.getTargetCode()).orElse(0L);
+        final Integer senseNo    = Optional.ofNullable(entry.getSenseNo()).orElse(0);
 
         log.debug("[SAVE] surface={}, lemma={}, tc={}, senseNo={}",
                 surface, entry.getLemma(), entry.getTargetCode(), entry.getSenseNo());
@@ -164,8 +164,9 @@ public class UnknownWordService {
                         w.setExample(example);
                         dirty = true;
                     }
-                    if (w.getWordCategory() == null && entry.getFieldType() != null) {
-                        w.setWordCategory(entry.getFieldType());
+                    if ((w.getWordCategory() == null || w.getWordCategory().isBlank())
+                            && entry.getCategories() != null && !entry.getCategories().isBlank()) {
+                        w.setWordCategory(entry.getCategories());  // 코드 CSV로 채움
                         dirty = true;
                     }
                     if (w.getShoulderNo() == 0 && entry.getShoulderNo() != 0) {
@@ -195,7 +196,7 @@ public class UnknownWordService {
                         return wordRepository.save(Word.builder()
                                 .wordName(wordName)
                                 .definition(definition == null ? "" : definition)
-                                .wordCategory(entry.getFieldType())
+                                .wordCategory(entry.getCategories())
                                 .shoulderNo(entry.getShoulderNo())
                                 .example(example == null ? "" : example)
                                 .targetCode(targetCode)

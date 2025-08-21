@@ -1,9 +1,9 @@
 package com.words_hanjoom.domain.wordbooks.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
-
 import java.util.List;
 
 @Data
@@ -14,8 +14,9 @@ public class SearchResponse {
     @Data
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Channel {
-        private int total;
+        @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)   // ★ 추가
         private List<Item> item;
+        private int total;
     }
 
     @Data
@@ -35,6 +36,6 @@ public class SearchResponse {
     public static class Sense {
         private String definition;
         private String link;
-        private String type;
+        private String type;   // (있어도 무방, 안 쓰면 그대로 둬도 됨)
     }
 }

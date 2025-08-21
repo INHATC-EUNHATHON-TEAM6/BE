@@ -171,38 +171,29 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 })
                 .flatMap(body -> {
                     try {
-                        // ===== DEBUG: 응답 크기 + item 노드 형태 로그 =====
                         int bodyLen = (body == null) ? -1 : body.length();
                         JsonNode root = objectMapper.readTree(body);
-                        JsonNode items = root.path("channel").path("item");
+                        JsonNode itemsNode = root.path("channel").path("item");
 
-                        String itemKind =
-                                items.isArray() ? "array(" + items.size() + ")"
-                                        : items.isObject() ? "object"
-                                        : items.isMissingNode() ? "missing"
-                                        : items.isNull() ? "null"
-                                        : "other(" + items.getNodeType() + ")";
+                        // ✅ 단건/배열 모두 수용
+                        List<JsonNode> items = asList(itemsNode);
 
-                        log.debug("[DICT][searchFirst {}:{}] bodyLen={}, itemKind={}",
-                                method, target, bodyLen, itemKind);
+                        String itemKind = itemsNode.isArray() ? "array(" + items.size() + ")"
+                                : itemsNode.isObject() ? "object"
+                                : itemsNode.isMissingNode() ? "missing"
+                                : itemsNode.isNull() ? "null"
+                                : "other(" + itemsNode.getNodeType() + ")";
+                        log.debug("[DICT][searchFirst {}:{}] bodyLen={}, itemKind={}", method, target, bodyLen, itemKind);
 
-                        // (기존 로직 유지 시) 왜 empty 되는지 원인도 남겨줘
-                        if (!items.isArray()) {
-                            log.debug("[DICT] items not array → return empty");
+                        if (items.isEmpty()) {
+                            log.debug("[DICT] items empty → return empty");
                             return Mono.empty();
                         }
-                        if (items.size() == 0) {
-                            log.debug("[DICT] items array empty → return empty");
-                            return Mono.empty();
-                        }
-                        // ===== DEBUG 끝 =====
+
                         // 가장 적합한 item 고르기 (완전일치 우선, 아니면 첫번째)
                         JsonNode item = null;
                         for (JsonNode it : items) {
-                            if (qq.equals(textOrNull(it, "word"))) {
-                                item = it;
-                                break;
-                            }
+                            if (qq.equals(textOrNull(it, "word"))) { item = it; break; }
                         }
                         if (item == null) item = items.get(0);
 
@@ -212,38 +203,42 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
                         JsonNode senseFromSearch = pickFirstSense(item);
                         String def = textOrNull(senseFromSearch, "definition");
-                        String type = textOrNull(senseFromSearch, "type");
                         String exampleFromSearch = pickExample(senseFromSearch);
-                        byte supNo = (byte) item.path("sup_no").asInt(0);
+                        byte   supNo = (byte) item.path("sup_no").asInt(0);
 
-                        // 추가: search 응답에서도 syn/ant 뽑아두기
-                        List<String> synFromSearch = collectLexical(item, senseFromSearch, true);
-                        List<String> antFromSearch = collectLexical(item, senseFromSearch, false);
+                        // ✅ search 응답에서도 syn/ant/cat 뽑아두기
+                        List<String>  synFromSearch = collectLexical(item, senseFromSearch, true);
+                        List<String>  antFromSearch = collectLexical(item, senseFromSearch, false);
+                        List<String> catsFromSearch = collectCatNames(item, senseFromSearch);
 
                         log.debug("[DICT] search hit lemma='{}' tc={} → call view.do", lemma, tc);
 
                         // --- view.do 호출 ---
                         return fetchFirstSenseInfo(tc)
-                                .defaultIfEmpty(new SenseInfo(null, null, List.of(), List.of()))
+                                .defaultIfEmpty(new SenseInfo(null, null, List.of(), List.of(), List.of()))
                                 .map(si -> {
                                     String finalExample = !isBlank(si.example()) ? si.example() : exampleFromSearch;
 
-                                    LinkedHashSet<String> syn = new LinkedHashSet<>();
-                                    syn.addAll(si.synonyms());
+                                    LinkedHashSet<String> syn = new LinkedHashSet<>(si.synonyms());
                                     syn.addAll(synFromSearch);
 
-                                    LinkedHashSet<String> ant = new LinkedHashSet<>();
-                                    ant.addAll(si.antonyms());
+                                    LinkedHashSet<String> ant = new LinkedHashSet<>(si.antonyms());
                                     ant.addAll(antFromSearch);
+
+                                    // ✅ 카테고리: view + search 병합 후 CSV
+                                    LinkedHashSet<String> cats = new LinkedHashSet<>(si.catNames());
+                                    cats.addAll(catsFromSearch);
+                                    String categories = toCsvStr(cats);
+                                    if (categories.isBlank()) categories = "일반";
 
                                     return DictEntry.builder()
                                             .lemma(lemma)
                                             .definition(def)
-                                            .fieldType(type)
                                             .targetCode(tc)
                                             .shoulderNo(supNo)
                                             .example(finalExample)
                                             .senseNo(si.senseNo())
+                                            .categories(categories)       // ← 오직 catCsv만!
                                             .synonyms(new ArrayList<>(syn))
                                             .antonyms(new ArrayList<>(ant))
                                             .build();
@@ -306,8 +301,9 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
             }
             List<String> synonyms = collectLexical(chosen, senseNode, true);
             List<String> antonyms = collectLexical(chosen, senseNode, false);
+            List<String> catNames = collectCatNames(chosen, senseNode);
 
-            return Mono.just(new SenseInfo(example, senseNo, synonyms, antonyms));
+            return Mono.just(new SenseInfo(example, senseNo, synonyms, antonyms, catNames));
         } catch (Exception e) {
             log.warn("[DICT][view] parse error tc={}: {}", targetCode, e.toString());
             return Mono.empty();
@@ -454,5 +450,38 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
         return null;
     }
 
-    record SenseInfo(String example, Integer senseNo, List<String> synonyms, List<String> antonyms) {}
+    // cat_info → 코드 리스트 수집 (선택 sense 우선, 없으면 같은 item의 모든 sense 훑기)
+    private static List<String> collectCatNames(JsonNode item, JsonNode sense) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+
+        for (JsonNode c : asList(sense.path("cat_info"))) {
+            String cat = textOrNull(c, "cat");
+            if (!isBlank(cat)) out.add(cat);
+        }
+        if (out.isEmpty()) {
+            for (JsonNode pos : asList(item.path("word_info").path("pos_info"))) {
+                for (JsonNode comm : asList(pos.path("comm_pattern_info"))) {
+                    for (JsonNode s : asList(comm.path("sense_info"))) {
+                        for (JsonNode c : asList(s.path("cat_info"))) {
+                            String cat = textOrNull(c, "cat");
+                            if (!isBlank(cat)) out.add(cat);
+                        }
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
+    private static String toCsvStr(Collection<String> xs) {
+        if (xs == null || xs.isEmpty()) return "";
+        return xs.stream()
+                .filter(s -> s != null && !s.isBlank())
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.joining(", "));
+    }
+
+    record SenseInfo(String example, Integer senseNo, List<String> synonyms,
+                     List<String> antonyms, List<String> catNames) {}
 }
