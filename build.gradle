@@ -6,16 +6,11 @@ plugins {
 
 group = 'com.backend'
 version = '0.0.1-SNAPSHOT'
-sourceCompatibility = '21'
 
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(21)
     }
-}
-
-repositories {
-    mavenCentral()
 }
 
 configurations {
@@ -38,27 +33,12 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.ai:spring-ai-starter-model-openai'
-    implementation 'org.springframework.boot:spring-boot-starter-validation'
     compileOnly 'org.projectlombok:lombok'
-    runtimeOnly 'org.mariadb.jdbc:mariadb-java-client:3.3.3'
+    runtimeOnly 'com.mysql:mysql-connector-j'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    implementation 'org.mariadb.jdbc:mariadb-java-client'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.12.0'
-
-    // jwt Claims 관련 의존성
-    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
-    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5' // Jackson 사용 시
-
-    // Jsoup java HTML 파서 의존성 추가
-    implementation 'org.jsoup:jsoup:1.17.2'
-
-    // swagger 의존성 적용
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
 }
 
 dependencyManagement {
@@ -69,12 +49,4 @@ dependencyManagement {
 
 tasks.named('test') {
     useJUnitPlatform()
-}
-
-repositories {
-    mavenCentral()
-}
-
-springBoot {
-    mainClass = 'com.words_hanjoom.WordsHanjoomApplication'
 }
