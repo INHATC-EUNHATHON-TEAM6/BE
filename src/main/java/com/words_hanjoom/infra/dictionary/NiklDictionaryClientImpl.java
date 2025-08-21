@@ -41,6 +41,15 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     }
 
     @Override
+    public Mono<List<DictEntry>> lookupAllSenses(String surface) {
+        // 만약 실제로 다의어 목록 파싱이 가능하면 여기에 구현.
+        // 일단은 단건을 리스트로 래핑해도 로직은 동작함(스코어링 → 선택/스킵).
+        return quickLookup(surface)
+                .map(List::of)
+                .defaultIfEmpty(List.of());
+    }
+
+    @Override
     public Mono<SearchResponse> search(SearchRequest req) {
         // --- 필수/기본값 보정 ---
         String q = nz(req.q());

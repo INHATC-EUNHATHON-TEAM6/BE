@@ -46,12 +46,13 @@ public class UnknownWordController {
     )
     public ResponseEntity<UnknownWordService.Result> saveWord(
             @RequestParam Long userId,
-            @RequestBody List<String> tokens
+            @RequestBody List<String> tokens,
+            @RequestParam(required = false, defaultValue = "") String context
     ) {
         if (tokens == null || tokens.isEmpty()) {
             return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok(unknownWordService.saveAll(userId, tokens));
+        return ResponseEntity.ok(unknownWordService.saveAll(userId, tokens, context));
     }
 
 }

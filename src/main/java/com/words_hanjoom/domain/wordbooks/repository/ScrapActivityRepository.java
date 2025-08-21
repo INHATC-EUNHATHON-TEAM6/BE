@@ -19,5 +19,6 @@ public interface ScrapActivityRepository extends JpaRepository<ScrapActivity, Lo
           AND ai_feedback IS NOT NULL AND ai_feedback <> ''
         ORDER BY scrap_id
         """, nativeQuery = true)
+
     List<ScrapActivity> findUnknownsNative(@Param("type") String type);
 }
