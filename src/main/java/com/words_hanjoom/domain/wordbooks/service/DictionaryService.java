@@ -4,10 +4,11 @@ import com.words_hanjoom.domain.wordbooks.dto.request.SearchRequest;
 import com.words_hanjoom.domain.wordbooks.dto.response.SearchResponse;
 import com.words_hanjoom.domain.wordbooks.dto.response.ViewResponse;
 import com.words_hanjoom.infra.dictionary.NiklDictionaryClient;
-import lombok.RequiredArgsConstructor; // ✅ 이 부분은 삭제하는 것이 좋음
+// import lombok.RequiredArgsConstructor; // ✅ 이 부분은 삭제하는 것이 좋음
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -18,8 +19,7 @@ public class DictionaryService {
 
     private final NiklDictionaryClient dictClient;
 
-    // ✅ 아래 생성자를 추가하세요.
-    // @RequiredArgsConstructor를 제거하면 이 코드를 직접 작성해야 합니다.
+    // ✅ @RequiredArgsConstructor 미사용 시 수동 생성자
     public DictionaryService(NiklDictionaryClient dictClient) {
         this.dictClient = dictClient;
     }

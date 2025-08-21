@@ -50,6 +50,21 @@ public class UnknownWordService {
         return new Result(wordbook.getWordbookId(), saved);
     }
 
+    private static Set<String> csvToSet(String csv) {
+        if (csv == null || csv.isBlank()) return new LinkedHashSet<>();
+        return Arrays.stream(csv.split("\\s*,\\s*"))
+                .filter(s -> s != null && !s.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+    private static String mergeCsv(String existingCsv, List<String> incomingList) {
+        LinkedHashSet<String> set = new LinkedHashSet<>(csvToSet(existingCsv));
+        if (incomingList != null) {
+            for (String s : incomingList) {
+                if (s != null && !s.isBlank()) set.add(s.trim());
+            }
+        }
+        return set.isEmpty() ? "" : String.join(", ", set);
+    }
 
     // ★ 단어 1개만 새 트랜잭션으로 저장
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -163,6 +178,16 @@ public class UnknownWordService {
                         dirty = true;
                     }
 
+                    // ✅ 유의어/반의어 업데이트 보정: 빈 값이면 채우고, 값이 있으면 병합(중복 제거)
+                    String mergedSyn = mergeCsv(w.getSynonym(), entry.getSynonyms());
+                    if (!Objects.equals((w.getSynonym() == null ? "" : w.getSynonym()), mergedSyn)) {
+                        w.setSynonym(mergedSyn); dirty = true;
+                    }
+                    String mergedAnt = mergeCsv(w.getAntonym(), entry.getAntonyms());
+                    if (!Objects.equals((w.getAntonym() == null ? "" : w.getAntonym()), mergedAnt)) {
+                        w.setAntonym(mergedAnt); dirty = true;
+                    }
+
                     return dirty ? wordRepository.save(w) : w;
                 })
                 .orElseGet(() -> {
@@ -175,7 +200,7 @@ public class UnknownWordService {
                                 .example(example == null ? "" : example)
                                 .targetCode(targetCode)
                                 .senseNo(entry.getSenseNo())
-                                .synonym(joinList(entry.getSynonyms()))
+                                .synonym(joinList(entry.getSynonyms()))  // 신규는 그대로
                                 .antonym(joinList(entry.getAntonyms()))
                                 .build());
                     } catch (DataIntegrityViolationException e) {

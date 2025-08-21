@@ -87,18 +87,48 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
     @Override
     public Mono<ViewResponse> view(long targetCode) {
-        return dicWebClient.get()
+        if (targetCode <= 0) return Mono.empty();
+
+        Mono<String> primary = dicWebClient.get()
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
+                        .queryParam("method", "target_code")     // ✅ 공식 라우트
                         .queryParam("target_code", targetCode)
                         .build())
-                .accept(MediaType.parseMediaType("text/json"))
+                .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
-                .bodyToMono(String.class)
-                .map(body -> read(body, ViewResponse.class));
-    }
+                .bodyToMono(String.class);
 
+        Mono<String> fallback = dicWebClient.get()
+                .uri(b -> b.path("/view.do")
+                        .queryParam("key", apiKey)
+                        .queryParam("req_type", "json")
+                        .queryParam("type_search", "view")       // ✅ 발견한 호환 라우트
+                        .queryParam("method", "TARGET_CODE")
+                        .queryParam("q", targetCode)
+                        .build())
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .bodyToMono(String.class);
+
+        return primary
+                .onErrorResume(e -> fallback)                // 1) HTTP 에러면 폴백
+                .flatMap(body -> {
+                    try {
+                        ViewResponse vr = read(body, ViewResponse.class);
+                        // channel.item이 비거나 누락되어 있으면 폴백으로 한 번 더
+                        boolean hasItem = vr != null
+                                && vr.getChannel() != null
+                                && vr.getChannel().getItem() != null
+                                && !vr.getChannel().getItem().isEmpty();
+                        if (hasItem) return Mono.just(vr);
+                    } catch (Exception ignore) {
+                        // 파싱 실패 시 폴백으로
+                    }
+                    return fallback.map(b -> read(b, ViewResponse.class));
+                });
+    }
 
     @Override
     public Mono<DictEntry> quickLookup(String q) {
@@ -230,80 +260,57 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     private Mono<SenseInfo> fetchFirstSenseInfo(long targetCode) {
         if (targetCode <= 0) return Mono.empty();
 
-        return dicWebClient.get()
+        Mono<String> primary = dicWebClient.get()
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
-                        .queryParam("method", "target_code") // 명시
+                        .queryParam("method", "target_code")      // 공식 라우트
                         .queryParam("target_code", targetCode)
                         .build())
-                .accept(MediaType.ALL) // 서버가 text/json을 줄 수도 있으니 ALL
-                .exchangeToMono(resp -> resp
-                        .bodyToMono(String.class)
-                        .doOnNext(body -> {
-                            int len = (body == null) ? -1 : body.length();
-                            var ct = resp.headers().contentType().orElse(null);
-                            log.debug("[DICT][view] tc={} status={} ct={} len={} head={}",
-                                    targetCode, resp.statusCode(), ct, len,
-                                    (body == null ? "null" : body.substring(0, Math.min(len, 200))));
-                        })
-                        .flatMap(body -> {
-                            try {
-                                JsonNode root = objectMapper.readTree(body);
-                                JsonNode itemNode = root.path("channel").path("item");
-                                if (isMissing(itemNode)) return Mono.empty();
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .bodyToMono(String.class);
 
-                                String itemKind =
-                                        itemNode.isArray()  ? "array(" + itemNode.size() + ")" :
-                                                itemNode.isObject() ? "object" :
-                                                        itemNode.isNull()   ? "null"   :
-                                                                "other(" + itemNode.getNodeType() + ")";
-                                log.debug("[DICT][view] tc={} itemKind={}", targetCode, itemKind);
+        Mono<String> fallback = dicWebClient.get()
+                .uri(b -> b.path("/view.do")
+                        .queryParam("key", apiKey)
+                        .queryParam("req_type", "json")
+                        .queryParam("type_search", "view")        // 폴백 라우트
+                        .queryParam("method", "TARGET_CODE")
+                        .queryParam("q", targetCode)
+                        .build())
+                .accept(MediaType.APPLICATION_JSON)
+                .retrieve()
+                .bodyToMono(String.class);
 
-                                JsonNode chosen = itemNode;
-                                if (itemNode.isArray()) {
-                                    JsonNode found = null;
-                                    // 1) target_code 일치
-                                    for (JsonNode it : itemNode) {
-                                        if (it.path("target_code").asLong(0) == targetCode) { found = it; break; }
-                                    }
-                                    // 2) word_info 있는 첫 항목
-                                    if (found == null) {
-                                        for (JsonNode it : itemNode) {
-                                            if (!isMissing(it.path("word_info"))) { found = it; break; }
-                                        }
-                                    }
-                                    // 3) 마지막 수단
-                                    if (found == null && itemNode.size() > 0) found = itemNode.get(0);
-                                    chosen = found;
-                                }
-                                if (isMissing(chosen)) return Mono.empty();
+        // 1차: primary, 실패/빈결과면 2차: fallback
+        return primary
+                .onErrorResume(e -> fallback)
+                .flatMap(body -> parseViewBody(body, targetCode))
+                .switchIfEmpty(fallback.flatMap(body -> parseViewBody(body, targetCode)));
+    }
 
-                                JsonNode senseNode = pickFirstSense(chosen);
-                                if (isMissing(senseNode)) {
-                                    log.debug("[DICT][view] tc={} no sense found → empty", targetCode);
-                                    return Mono.empty();
-                                }
+    private Mono<SenseInfo> parseViewBody(String body, long targetCode) {
+        try {
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode itemNode = root.path("channel").path("item");
+            if (itemNode == null || itemNode.isMissingNode() || itemNode.isNull()) return Mono.empty();
 
-                                String example = pickExample(senseNode);
-                                Short senseNo = toShortOrNull(senseNode.path("sense_code").asText(null));
-                                List<String> synonyms = collectLexical(chosen, senseNode, true);
-                                List<String> antonyms = collectLexical(chosen, senseNode, false);
+            JsonNode chosen = itemNode.isArray() ? itemNode.get(0) : itemNode;
 
-                                log.debug("[DICT][view] tc={} exEmpty={} senseNo={} synCount={} antCount={}",
-                                        targetCode, isBlank(example), senseNo, synonyms.size(), antonyms.size());
+            JsonNode senseNode = pickFirstSense(chosen);
+            if (senseNode == null || senseNode.isMissingNode() || senseNode.isNull()) return Mono.empty();
 
-                                return Mono.just(new SenseInfo(example, senseNo, synonyms, antonyms));
-                            } catch (Exception e) {
-                                log.warn("[DICT] view parse error: {}", e.toString());
-                                return Mono.empty();
-                            }
-                        })
-                )
-                .onErrorResume(e -> {
-                    log.warn("[DICT] view http error: {}", e.toString());
-                    return Mono.empty();
-                });
+            String example = pickExample(senseNode);
+            Short senseNo = toShortOrNull(senseNode.path("sense_code").asText(null));
+            List<String> synonyms = collectLexical(chosen, senseNode, true);
+            List<String> antonyms = collectLexical(chosen, senseNode, false);
+
+            return Mono.just(new SenseInfo(example, senseNo, synonyms, antonyms));
+        } catch (Exception e) {
+            log.warn("[DICT][view] parse error tc={}: {}", targetCode, e.toString());
+            return Mono.empty();
+        }
     }
 
     // --- 유틸리티 메서드 ---
@@ -390,49 +397,34 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     }
 
     private static String pickExample(JsonNode sense) {
-        if (isMissing(sense)) return null;
-
-        JsonNode exList = sense.path("example_info");
-        if (exList.isArray() && exList.size() > 0) {
-            for (JsonNode exNode : exList) {
-                String ex = textOrNull(exNode, "example");
-                if (!isBlank(ex)) {
-                    return ex;
-                }
-            }
+        if (sense == null || sense.isMissingNode() || sense.isNull()) return null;
+        for (JsonNode exNode : asList(sense.path("example_info"))) {
+            String ex = textOrNull(exNode, "example");
+            if (ex != null && !ex.isBlank()) return ex;
         }
         return textOrNull(sense, "example");
     }
 
+    private static List<JsonNode> asList(JsonNode n) {
+        if (n == null || n.isMissingNode() || n.isNull()) return List.of();
+        if (n.isArray()) { List<JsonNode> r = new ArrayList<>(); n.forEach(r::add); return r; }
+        return List.of(n);
+    }
+
     private static List<String> collectLexical(JsonNode item, JsonNode sense, boolean wantSyn) {
         Set<String> out = new LinkedHashSet<>();
-
-        JsonNode senseLexical = sense.path("lexical_info");
-        if (senseLexical.isArray()) {
-            for (JsonNode node : senseLexical) {
-                String type = textOrNull(node, "type");
-                if (wantSyn && isSynonymType(type) || (!wantSyn && isAntonymType(type))) {
-                    String word = textOrNull(node, "word");
-                    if (!isBlank(word)) {
-                        out.add(word);
-                    }
-                }
+        for (JsonNode node : asList(sense.path("lexical_info"))) {
+            String type = textOrNull(node, "type");
+            if ((wantSyn && isSynonymType(type)) || (!wantSyn && isAntonymType(type))) {
+                String w = textOrNull(node, "word");
+                if (w != null && !w.isBlank()) out.add(w);
             }
         }
-
-        JsonNode wordInfo = item.path("word_info");
-        if (!isMissing(wordInfo)) {
-            JsonNode relationInfo = wordInfo.path("relation_info");
-            if (relationInfo.isArray()) {
-                for (JsonNode node : relationInfo) {
-                    String type = textOrNull(node, "type");
-                    if (wantSyn && isSynonymType(type) || (!wantSyn && isAntonymType(type))) {
-                        String word = textOrNull(node, "word");
-                        if (!isBlank(word)) {
-                            out.add(word);
-                        }
-                    }
-                }
+        for (JsonNode node : asList(item.path("word_info").path("relation_info"))) {
+            String type = textOrNull(node, "type");
+            if ((wantSyn && isSynonymType(type)) || (!wantSyn && isAntonymType(type))) {
+                String w = textOrNull(node, "word");
+                if (w != null && !w.isBlank()) out.add(w);
             }
         }
         return new ArrayList<>(out);
