@@ -1,5 +1,6 @@
 HELP.md
 .gradle
+.env
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
@@ -38,3 +39,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# AWS pem key
+words_hanjoom.pem
