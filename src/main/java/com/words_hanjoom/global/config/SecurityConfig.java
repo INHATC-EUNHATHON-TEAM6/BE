@@ -1,6 +1,6 @@
 package com.words_hanjoom.global.config;
-import com.words_hanjoom.global.security.AuthenticationFilter;
 
+import com.words_hanjoom.global.security.AuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
@@ -9,9 +9,10 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -33,52 +34,53 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(AbstractHttpConfigurer::disable)
-                .cors(AbstractHttpConfigurer::disable)
-                .headers(AbstractHttpConfigurer::disable)
+                .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
+                                // Auth & API (공개)
                                 "/api/auth/**",
                                 "/api/wordbooks/dict/**",
                                 "/api/words/**",
-                                "/api/scraps/**"
-                        ).permitAll()
-                        .requestMatchers(
-                                "/api/auth/**",
+                                "/api/scraps/**",
+                                "/test",
+
+                                // Swagger / Docs
                                 "/v3/api-docs/**",
                                 "/v3/api-docs/swagger-config",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/swagger-resources/**",
-                                "/webjars/**",
-                                "/test" // 테스트용 API
-                                ).permitAll()
+                                "/webjars/**"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
-                // AuthenticationFilter를 UsernamePasswordAuthenticationFilter 전에 등록
-                .addFilterBefore(authenticationFilter,
-                        org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class);
+                // JWT 인증 필터
+                .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    @Bean
-    public FilterRegistrationBean<AuthenticationFilter> authenticationFilterRegistration(AuthenticationFilter f) {
-        FilterRegistrationBean<AuthenticationFilter> reg = new FilterRegistrationBean<>(f);
-        reg.setEnabled(false); // 서블릿 체인 자동 등록 막고, Security 체인에서만 돌게 함
-        return reg;
-    }
-
-    // CORS 설정 (도메인/포트는 환경에 맞게 조정)
+    // CORS 설정 (필요시 도메인/포트 조정)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*", "http://0.0.0.0:*"));
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("*"));
         cfg.setAllowCredentials(true);
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", cfg);
         return source;
+    }
+
+    // 서블릿 체인 자동 등록 방지 (Security 체인에서만 동작)
+    @Bean
+    public FilterRegistrationBean<AuthenticationFilter> authenticationFilterRegistration(AuthenticationFilter f) {
+        FilterRegistrationBean<AuthenticationFilter> reg = new FilterRegistrationBean<>(f);
+        reg.setEnabled(false);
+        return reg;
     }
 }
