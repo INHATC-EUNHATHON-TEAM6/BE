@@ -1,19 +1,22 @@
 package com.words_hanjoom.global.security;
 import com.words_hanjoom.global.util.HeaderUtil;
 import io.jsonwebtoken.Claims;
+import lombok.extern.slf4j.Slf4j;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.NonNull;
+import lombok.NonNull;;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * 토큰 인증 필터
@@ -21,12 +24,21 @@ import java.io.IOException;
  * 헤더에서 토큰을 가져와서 유효한 토큰인지 확인하고,
  * 유효하다면 SecurityContextHolder에 Authentication 객체를 저장하고 다음 필터로 넘어가도록 함
  */
+@Slf4j
 @Component
 @Log4j2
 @RequiredArgsConstructor
 public class AuthenticationFilter extends OncePerRequestFilter {
 
     private final TokenProvider tokenProvider;
+
+    private static final AntPathMatcher MATCHER = new AntPathMatcher();
+    private static final List<String> PUBLIC_PATHS = List.of(
+            "/api/auth/**",
+            "/api/wordbooks/dict/**",   // ← 여기 포함
+            "/api/words/**",             // 테스트 중이면 공개
+            "/api/scraps/**"
+    );
 
     // Swagger, 공개경로는 애초에 필터 제외
     @Override
@@ -69,12 +81,9 @@ public class AuthenticationFilter extends OncePerRequestFilter {
             Authentication auth = tokenProvider.getAuthentication(claims, accessToken);
 
             // SecurityContextHolder에 Authentication 객체를 저장
-            if(auth != null) {
-                SecurityContextHolder.getContext().setAuthentication(auth);
-            }
+            SecurityContextHolder.getContext().setAuthentication(authentication);
         }
 
-        // 5) 다음 필터로 요청 전달
         filterChain.doFilter(request, response);
     }
 }

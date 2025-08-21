@@ -6,8 +6,9 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 .DS_Store
-*.jar
+/src/main/resources/application.yml
 application.properties
+*.jar
 
 ### STS ###
 .apt_generated
