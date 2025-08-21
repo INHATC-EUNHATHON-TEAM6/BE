@@ -28,6 +28,11 @@ public interface WordRepository extends JpaRepository<Word, Long> {
     Optional<Word> findLooselyByName(@Param("surface") String surface,
                                      @Param("plain")   String plain);
 
+    // openai UnknownService 폴백 연결
+    @org.springframework.data.jpa.repository.Query(
+            "select coalesce(max(w.senseNo),0) from Word w where w.targetCode = 0 and w.wordName = :name")
+    Integer findMaxAiSenseNoByName(@org.springframework.data.repository.query.Param("name") String name);
+
     // 같은 표기어(동음이의/동형이의) 전부 가져올 때
     List<Word> findAllByWordName(String wordName);
 
