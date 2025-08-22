@@ -205,6 +205,7 @@ public class FeedbackService {
             if (scrapActivities.getComparisonType() == ActivityType.UNKNOWN_WORD) {
                 eventPublisher.publishEvent(new ScrapActivitySavedEvent(
                         scrapActivities.getUserId(),
+                        scrapActivities.getArticleId(),
                         scrapActivities.getComparisonType(),
                         scrapActivities.getUserAnswer()
                 ));
