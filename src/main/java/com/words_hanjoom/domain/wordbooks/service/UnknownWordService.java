@@ -49,7 +49,23 @@ public class UnknownWordService {
         return saveAll(userId, tokenizeUnknownWords(csv), null);
     }
 
-    // ★ 컨트롤러에서 기사 맥락 문자열을 만들어 넘겨줄 때 사용
+    @Transactional
+    public void importUnknownWords(Long userId, String raw) {
+        if (raw == null || raw.isBlank()) return;
+
+        // 기존과 동일한 분리 규칙
+        Set<String> tokens = Arrays.stream(raw.split("[,、/\\s]+"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        // 핵심: 파이프라인 재사용 (DB 조회 → NIKL → AI 폴백 + 단어장 매핑)
+        for (String term : tokens) {
+            saveOne(userId, term, null); // 부작용으로 word/wordbook 저장됨
+        }
+    }
+
+    // 컨트롤러에서 기사 맥락 문자열을 만들어 넘겨줄 때 사용
     @Transactional
     public Result processCsv(Long userId, String csv, String context) {
         return saveAll(userId, tokenizeUnknownWords(csv), context);

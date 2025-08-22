@@ -11,11 +11,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface WordbookWordRepository extends JpaRepository<WordbookWord, WordbookWordId> { // ✅ ID 타입 변경
 
+
     /** 매핑 중복이면 PK 제약으로 실패하므로 INSERT IGNORE 사용 */
     @Modifying(clearAutomatically = true, flushAutomatically = true) // 권장 옵션
     @Query(value = "INSERT IGNORE INTO wordbook_words (wordbook_id, word_id) VALUES (:wbId, :wId)", nativeQuery = true)
     int insertIgnore(@Param("wbId") Long wordbookId, @Param("wId") Long wordId); // 영향 행 수 반환하도록 int 권장
-
-    // 편의용: 복합키 없이도 중복 체크 가능 (선택)
-    boolean existsByIdWordbookIdAndIdWordId(Long wordbookId, Long wordId);
 }

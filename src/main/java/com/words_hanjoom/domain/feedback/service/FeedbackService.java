@@ -9,6 +9,7 @@ import com.words_hanjoom.domain.feedback.dto.response.FeedbackThisMonthActivityD
 import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.entity.ActivityType;
 import com.words_hanjoom.domain.crawling.entity.Article;
+import com.words_hanjoom.domain.feedback.event.ScrapActivitySavedEvent;
 import com.words_hanjoom.domain.users.entity.Category;
 import com.words_hanjoom.domain.feedback.entity.ScrapActivities;
 import com.words_hanjoom.domain.feedback.repository.FeedbackRepository;
@@ -24,6 +25,7 @@ import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -42,6 +44,9 @@ public class FeedbackService {
     private final OpenAiChatModel chatModel;
     private final OpenAiEmbeddingModel embeddingModel;
 
+    // 이벤트 퍼블리셔
+    private final ApplicationEventPublisher eventPublisher;
+
     @Autowired
     public FeedbackService(UserRepository userRepository,
                            ArticleRepository articleRepository,
@@ -49,7 +54,8 @@ public class FeedbackService {
                            CategoryRepository categoryRepository,
                            ObjectMapper objectMapper,
                            OpenAiChatModel chatModel,
-                           OpenAiEmbeddingModel embeddingModel) {
+                           OpenAiEmbeddingModel embeddingModel,
+                           ApplicationEventPublisher eventPublisher) {
         this.userRepository = userRepository;
         this.articleRepository = articleRepository;
         this.feedbackRepository = feedbackRepository;
@@ -57,6 +63,7 @@ public class FeedbackService {
         this.objectMapper = objectMapper;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
+        this.eventPublisher = eventPublisher;
     }
 
     public Map<String, List<FeedbackThisMonthActivityDto>> getUserActivitiesThisMonth(String loginId, int year, int month, int day) {
@@ -193,6 +200,15 @@ public class FeedbackService {
             scrapActivities.setAiFeedback(feedback.getAiFeedback());
             scrapActivities.setEvaluationScore(feedback.getEvaluationScore());
             feedbackRepository.save(scrapActivities);
+
+            // 단어 자동수집 트리거: UNKNOWN_WORD인 경우에만 이벤트 발행
+            if (scrapActivities.getComparisonType() == ActivityType.UNKNOWN_WORD) {
+                eventPublisher.publishEvent(new ScrapActivitySavedEvent(
+                        scrapActivities.getUserId(),
+                        scrapActivities.getComparisonType(),
+                        scrapActivities.getUserAnswer()
+                ));
+            }
         }
         return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
     }
