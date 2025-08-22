@@ -12,7 +12,7 @@ public class Article {
     @Column(name = "article_id")
     private Long articleId;       // PK
     @Column(name = "category_id", nullable = false)
-    private Integer categoryId;   // FK -> 카테고리 테이블(ID 참조)
+    private Long categoryId;   // FK -> 카테고리 테이블(ID 참조)
 
     @Column(name = "title", nullable = false)
     private String title;
@@ -34,7 +34,7 @@ public class Article {
 
     public Article() {}
 
-    public Article(Integer categoryId, String title, String content,
+    public Article(Long categoryId, String title, String content,
                    LocalDateTime publishedAt, String reporterName, String publisher,
                    String articleUrl, LocalDateTime createAt) {
         this.categoryId = categoryId;
@@ -47,7 +47,7 @@ public class Article {
         this.createdAt = createAt;
     }
 
-    public Article(Long articleId, Integer categoryId, String title, String content,
+    public Article(Long articleId, Long categoryId, String title, String content,
                    LocalDateTime publishedAt, String reporterName, String publisher,
                    String articleUrl, LocalDateTime createAt) {
         this.articleId = articleId;
@@ -81,11 +81,11 @@ public class Article {
         this.articleId = articleId;
     }
 
-    public Integer getCategoryId() {
+    public Long getCategoryId() {
         return categoryId;
     }
 
-    public void setCategoryId(Integer categoryId) {
+    public void setCategoryId(Long categoryId) {
         this.categoryId = categoryId;
     }
 
