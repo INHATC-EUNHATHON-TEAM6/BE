@@ -18,7 +18,7 @@ import com.words_hanjoom.domain.feedback.repository.SpringDataJpaFeedbackReposit
 import com.words_hanjoom.domain.users.entity.User;
 import com.words_hanjoom.domain.users.repository.CategoryRepository;
 import com.words_hanjoom.domain.users.repository.UserRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.embedding.EmbeddingResponse;

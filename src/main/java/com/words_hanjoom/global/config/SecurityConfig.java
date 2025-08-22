@@ -47,6 +47,7 @@ public class SecurityConfig {
                                 "/api/words/**",
                                 "/api/scraps/**",
                                 "/api/feedback/**",
+                                "/api/dev/**",
                                 "/test",
 
                                 // Swagger / Docs

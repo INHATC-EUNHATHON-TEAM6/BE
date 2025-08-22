@@ -49,10 +49,11 @@ public class UnknownWordService {
         return saveAll(userId, tokenizeUnknownWords(csv), null);
     }
 
-    @Transactional
+
     public void importUnknownWords(Long userId, String raw) {
         if (raw == null || raw.isBlank()) return;
 
+        log.info("[WORD] import start userId={}, raw='{}'", userId, raw);
         // 기존과 동일한 분리 규칙
         Set<String> tokens = Arrays.stream(raw.split("[,、/\\s]+"))
                 .map(String::trim)
@@ -87,8 +88,8 @@ public class UnknownWordService {
         return saveOne(userId, raw, null);
     }
 
-    // ★ 핵심: 맥락 기반 DB→NIKL→AI 순차 폴백
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    // 맥락 기반 DB → NIKL → AI 순차 폴백
+    @Transactional
     public Optional<SavedWord> saveOne(Long userId, String raw, String context) {
         if (raw == null || raw.isBlank()) return Optional.empty();
 
@@ -188,8 +189,15 @@ public class UnknownWordService {
                         targetCode
                 ));
 
+        // PK 보장: 혹시 null이면 DB에서 다시 가져와서 ID 확보
+        if (saved.getWordId() == null) {
+            saved = wordRepository.findByWordName(wordName)
+                    .orElseThrow(() -> new IllegalStateException("Word saved but not found: " + wordName));
+        }
+
         mapIntoWordbook(userId, saved.getWordId());
-        log.info("[WORD] saved '{}' → wordId={}, tc={}, sense={}", surface, saved.getWordId(), targetCode, senseNoSafe);
+        log.info("[WORD] saved '{}' → wordId={}, tc={}, sense={}",
+                surface, saved.getWordId(), saved.getTargetCode(), saved.getSenseNo());
         return saved;
     }
 
@@ -203,11 +211,12 @@ public class UnknownWordService {
     /** 신규 Word 저장 시, AI 전역 유니크 충돌에 대해 짧게 재시도 */
     private Word saveNewWordWithRetry(Word candidate, Long targetCode) {
         if (!Objects.equals(targetCode, 0L)) {
-            return wordRepository.save(candidate);
+            // 기존: return wordRepository.save(candidate);
+            return wordRepository.saveAndFlush(candidate); // ★ flush로 PK 확보
         }
         for (int attempt = 1; attempt <= AI_SAVE_RETRIES; attempt++) {
             try {
-                return wordRepository.save(candidate);
+                return wordRepository.saveAndFlush(candidate); // ★
             } catch (DataIntegrityViolationException e) {
                 if (isUqTargetSenseDup(e)) {
                     int next = allocateGlobalAiSenseNo();
@@ -218,7 +227,7 @@ public class UnknownWordService {
                 throw e;
             }
         }
-        return wordRepository.save(candidate);
+        return wordRepository.saveAndFlush(candidate); // ★
     }
 
     private boolean isUqTargetSenseDup(Throwable e) {
@@ -251,7 +260,7 @@ public class UnknownWordService {
         String mergedAnt = mergeCsv(w.getAntonym(), ants);
         if (!Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) { w.setAntonym(mergedAnt); dirty = true; }
 
-        return dirty ? wordRepository.save(w) : w;
+        return dirty ? wordRepository.saveAndFlush(w) : w;
     }
 
     private void mapIntoWordbook(Long userId, Long wordId) {
