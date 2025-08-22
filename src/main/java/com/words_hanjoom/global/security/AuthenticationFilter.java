@@ -27,23 +27,25 @@ public class AuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String u = request.getRequestURI();
+        boolean shouldSkip = !(u.startsWith("/v3/api-docs") ||
+                u.startsWith("/swagger-ui") ||
+                u.startsWith("/swagger-resources") ||
+                u.startsWith("/webjars") ||
+                u.equals("/swagger-ui.html") ||
+                u.equals("/actuator/health") ||
+                u.equals("/error") ||
+                u.equals("/favicon.ico") ||
+
+                // Public APIs
+                u.startsWith("/api/auth") ||
+                u.startsWith("/api/wordbooks/dict") ||
+                u.startsWith("/api/words") ||
+                u.startsWith("/api/scraps") ||
+                u.startsWith("/api/feedback") ||
+                u.equals("/test"));
         return
                 // Swagger & infra
-                u.startsWith("/v3/api-docs") ||
-                        u.startsWith("/swagger-ui") ||
-                        u.startsWith("/swagger-resources") ||
-                        u.startsWith("/webjars") ||
-                        u.equals("/swagger-ui.html") ||
-                        u.equals("/actuator/health") ||
-                        u.equals("/error") ||
-                        u.equals("/favicon.ico") ||
-
-                        // Public APIs
-                        u.startsWith("/api/auth") ||
-                        u.startsWith("/api/wordbooks/dict") ||
-                        u.startsWith("/api/words") ||
-                        u.startsWith("/api/scraps") ||
-                        u.equals("/test");
+                shouldSkip;
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.words_hanjoom.global.config;
 
 import com.words_hanjoom.global.security.AuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +20,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @RequiredArgsConstructor
@@ -44,6 +46,7 @@ public class SecurityConfig {
                                 "/api/wordbooks/dict/**",
                                 "/api/words/**",
                                 "/api/scraps/**",
+                                "/api/feedback/**",
                                 "/test",
 
                                 // Swagger / Docs
@@ -58,7 +61,6 @@ public class SecurityConfig {
                 )
                 // JWT 인증 필터
                 .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class);
-
         return http.build();
     }
 
