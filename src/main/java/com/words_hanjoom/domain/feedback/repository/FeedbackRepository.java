@@ -8,5 +8,6 @@ import java.util.List;
 
 public interface FeedbackRepository {
     ScrapActivities save(ScrapActivities activities);
+    List<ScrapActivities> findByUserIdAndArticleId(long userId, long articleId);
     List<FeedbackThisMonthActivityDto> findByUserIdAndYearAndMonthAndDay(long userId, LocalDateTime startDate, LocalDateTime endDate);
 }

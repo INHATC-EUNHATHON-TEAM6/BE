@@ -4,12 +4,14 @@ import java.util.List;
 
 public class FeedbacksDto {
     private String articleBody;
+    private String categoryName;
     private List<FeedbackDto> feedbacks;
 
     public FeedbacksDto() {}
 
-    public FeedbacksDto(String articleBody, List<FeedbackDto> feedbacks) {
+    public FeedbacksDto(String articleBody, String categoryName, List<FeedbackDto> feedbacks) {
         this.articleBody = articleBody;
+        this.categoryName = categoryName;
         this.feedbacks = feedbacks;
     }
 
@@ -19,6 +21,14 @@ public class FeedbacksDto {
 
     public void setArticleBody(String articleBody) {
         this.articleBody = articleBody;
+    }
+
+    public String getCategoryName() {
+        return categoryName;
+    }
+
+    public void setCategoryName(String categoryName) {
+        this.categoryName = categoryName;
     }
 
     public List<FeedbackDto> getFeedbacks() {

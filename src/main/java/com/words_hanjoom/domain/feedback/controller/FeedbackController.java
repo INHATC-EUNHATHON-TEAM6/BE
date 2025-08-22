@@ -35,6 +35,16 @@ public class FeedbackController {
         }
     }
 
+    @GetMapping("/feedback/{articleId}")
+    public ResponseEntity<?> getFeedback(@PathVariable("articleId") long articleId) {
+        try {
+            FeedbacksDto result = feedbackService.getScrapActivityRecord(articleId);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(e.getMessage());
+        }
+    }
+
     @PostMapping("/feedback")
     public ResponseEntity<?> feedback(@RequestBody ScrapActivityDto activity) {
         try {

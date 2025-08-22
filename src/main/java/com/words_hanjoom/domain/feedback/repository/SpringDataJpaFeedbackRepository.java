@@ -5,10 +5,12 @@ import com.words_hanjoom.domain.feedback.entity.ScrapActivities;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Repository
 public interface SpringDataJpaFeedbackRepository extends JpaRepository<ScrapActivities, Long>, FeedbackRepository {
     @Query("select distinct new com.words_hanjoom.domain.feedback.dto.response.FeedbackThisMonthActivityDto(s.articleId, s.activityAt) " +
             "from ScrapActivities s " +
