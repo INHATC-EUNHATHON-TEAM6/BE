@@ -8,12 +8,15 @@ import com.words_hanjoom.domain.feedback.dto.response.FeedbackDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbackThisMonthActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.entity.ActivityType;
-import com.words_hanjoom.domain.feedback.entity.Article;
-import com.words_hanjoom.domain.feedback.entity.Category;
+import com.words_hanjoom.domain.crawling.entity.Article;
+import com.words_hanjoom.domain.users.entity.Category;
 import com.words_hanjoom.domain.feedback.entity.ScrapActivities;
 import com.words_hanjoom.domain.feedback.repository.FeedbackRepository;
-import com.words_hanjoom.domain.feedback.repository.SpringDataJpaArticleRepository;
+import com.words_hanjoom.domain.crawling.repository.ArticleRepository;
 import com.words_hanjoom.domain.feedback.repository.SpringDataJpaFeedbackRepository;
+import com.words_hanjoom.domain.users.entity.User;
+import com.words_hanjoom.domain.users.repository.CategoryRepository;
+import com.words_hanjoom.domain.users.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
@@ -31,36 +34,49 @@ import static com.words_hanjoom.domain.feedback.service.FeedbackServicePromptTem
 @Service
 @Transactional
 public class FeedbackService {
-    private final SpringDataJpaArticleRepository articleRepository;
+    private final UserRepository userRepository;
+    private final ArticleRepository articleRepository;
     private final FeedbackRepository feedbackRepository;
+    private final CategoryRepository categoryRepository;
     private final ObjectMapper objectMapper;
     private final OpenAiChatModel chatModel;
     private final OpenAiEmbeddingModel embeddingModel;
 
     @Autowired
-    public FeedbackService(SpringDataJpaArticleRepository articleRepository,
+    public FeedbackService(UserRepository userRepository,
+                           ArticleRepository articleRepository,
                            SpringDataJpaFeedbackRepository feedbackRepository,
+                           CategoryRepository categoryRepository,
                            ObjectMapper objectMapper,
                            OpenAiChatModel chatModel,
                            OpenAiEmbeddingModel embeddingModel) {
+        this.userRepository = userRepository;
         this.articleRepository = articleRepository;
         this.feedbackRepository = feedbackRepository;
+        this.categoryRepository = categoryRepository;
         this.objectMapper = objectMapper;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
     }
 
-    public Map<String, List<FeedbackThisMonthActivityDto>> getUserActivitiesThisMonth(int year, int month, int day) {
+    public Map<String, List<FeedbackThisMonthActivityDto>> getUserActivitiesThisMonth(String loginId, int year, int month, int day) {
         LocalDateTime startDate = LocalDateTime.of(year, month, 1, 0, 0, 0);
         LocalDateTime endDate = LocalDateTime.of(year, month, day, 23, 59, 59);
-        List<FeedbackThisMonthActivityDto> feedbackListThisMonth = feedbackRepository.findByUserIdAndYearAndMonthAndDay(1, startDate, endDate);
+        Optional<User> optionalUser = userRepository.findByLoginId(loginId);
+        User user = optionalUser.orElseThrow(
+                () -> new IllegalArgumentException("해당 유저 없음" + loginId)
+        );
+        List<FeedbackThisMonthActivityDto> feedbackListThisMonth = feedbackRepository.findByUserIdAndYearAndMonthAndDay(user.getUserId(), startDate, endDate);
         Map<String, List<FeedbackThisMonthActivityDto>> activityOfDay = new HashMap<>();
         for (FeedbackThisMonthActivityDto feedbackRecord : feedbackListThisMonth) {
             Optional<Article> optionalArticle = articleRepository.findById(feedbackRecord.getArticleId());
             Article article = optionalArticle.orElseThrow(
                     () -> new IllegalArgumentException("해당 Article 없음")
             );
-            Category category = new Category(article.getCategoryId());
+            Optional<Category> optionalCategory = categoryRepository.findById(article.getCategoryId());
+            Category category = optionalCategory.orElseThrow(
+                    () -> new IllegalArgumentException("해당 Category 없음")
+            );
             feedbackRecord.setCategory(category.getCategoryName());
             int daily = feedbackRecord.getActivityAt().getDayOfMonth();
             if (activityOfDay.get(Integer.toString(daily)) == null) {
@@ -71,14 +87,20 @@ public class FeedbackService {
         return activityOfDay;
     }
 
-    public FeedbacksDto getScrapActivityRecord(long articleId) {
-        long userId = 1L;
-        List<ScrapActivities> scrapActivities = feedbackRepository.findByUserIdAndArticleId(userId, articleId);
+    public FeedbacksDto getScrapActivityRecord(String loginId, long articleId) {
+        Optional<User> optionalUser = userRepository.findByLoginId(loginId);
+        User user = optionalUser.orElseThrow(
+                () -> new IllegalArgumentException("해당 유저 없음" + loginId)
+        );
+        List<ScrapActivities> scrapActivities = feedbackRepository.findByUserIdAndArticleId(user.getUserId(), articleId);
         Optional<Article> optionalArticle = articleRepository.findById(articleId);
         Article article = optionalArticle.orElseThrow(
                 () -> new IllegalArgumentException("해당 Article 없음")
         );
-        Category category = new Category(article.getCategoryId());
+        Optional<Category> optionalCategory = categoryRepository.findById(article.getCategoryId());
+        Category category = optionalCategory.orElseThrow(
+                () -> new IllegalArgumentException("해당 Category 없음")
+        );
         List<FeedbackDto> feedbacks = new ArrayList<>();
         for (ScrapActivities activities : scrapActivities) {
             FeedbackDto feedback = new FeedbackDto(
@@ -93,15 +115,20 @@ public class FeedbackService {
         return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
     }
 
-    public FeedbacksDto feedbackScrapActivity(ScrapActivityDto activity) throws JsonProcessingException {
-        // ❗️하드코딩!
-        long userId = 1L;
+    public FeedbacksDto feedbackScrapActivity(String loginId, ScrapActivityDto activity) throws JsonProcessingException {
+        Optional<User> optionalUser = userRepository.findByLoginId(loginId);
+        User user = optionalUser.orElseThrow(
+                () -> new IllegalArgumentException("해당 유저 없음" + loginId)
+        );
         Optional<Article> optionalArticle = articleRepository.findById(activity.getArticleId());
         Article article = optionalArticle.orElseThrow(
                 () -> new IllegalArgumentException("해당 Article 없음")
         );
         List<FeedbackDto> feedbacks = new ArrayList<>();
-        Category category = new Category(article.getArticleId());
+        Optional<Category> optionalCategory = categoryRepository.findById(article.getCategoryId());
+        Category category = optionalCategory.orElseThrow(
+                () -> new IllegalArgumentException("해당 Category 없음")
+        );
         Map<String, Object> firstRequest = requestFeedbackByAI(
                 Map.of(
                         "title", article.getTitle(),
@@ -158,7 +185,7 @@ public class FeedbackService {
         );
         for (FeedbackDto feedback : feedbacks) {
             ScrapActivities scrapActivities = new ScrapActivities();
-            scrapActivities.setUserId(userId);
+            scrapActivities.setUserId(user.getUserId());
             scrapActivities.setArticleId(article.getArticleId());
             scrapActivities.setComparisonType(feedback.getActivityType());
             scrapActivities.setUserAnswer(feedback.getUserAnswer());
@@ -167,7 +194,7 @@ public class FeedbackService {
             scrapActivities.setEvaluationScore(feedback.getEvaluationScore());
             feedbackRepository.save(scrapActivities);
         }
-        return new FeedbacksDto(article.getContent(), feedbacks);
+        return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
     }
 
     private FeedbackDto compareCategory(String userCategory, String aiCategory, String aiFeedback) {

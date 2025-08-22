@@ -7,27 +7,27 @@ import java.util.List;
 
 public class ScrapActivityDto {
     private long articleId;
-    private String title;
-    private String summary;
     private String category;
+    private String title;
     private List<String> keywords;
     private List<String> vocabularies;
+    private String summary;
     private String comment;
 
     @JsonCreator
     public ScrapActivityDto(@JsonProperty("articleId") long articleId,
-                            @JsonProperty("title") String title,
-                            @JsonProperty("summary") String summary,
                             @JsonProperty("category") String category,
+                            @JsonProperty("title") String title,
                             @JsonProperty("keywords") List<String> keywords,
                             @JsonProperty("vocabularies") List<String> vocabularies,
+                            @JsonProperty("summary") String summary,
                             @JsonProperty("comment") String comment) {
         this.articleId = articleId;
-        this.title = title;
-        this.summary = summary;
         this.category = category;
+        this.title = title;
         this.keywords = keywords;
         this.vocabularies = vocabularies;
+        this.summary = summary;
         this.comment = comment;
     }
 
