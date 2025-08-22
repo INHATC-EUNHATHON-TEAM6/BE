@@ -29,7 +29,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         String u = request.getRequestURI();
         return
                 // Swagger & infra
-                u.startsWith("/v3/api-docs") ||
+                !(u.startsWith("/v3/api-docs") ||
                         u.startsWith("/swagger-ui") ||
                         u.startsWith("/swagger-resources") ||
                         u.startsWith("/webjars") ||
@@ -43,7 +43,8 @@ public class AuthenticationFilter extends OncePerRequestFilter {
                         u.startsWith("/api/wordbooks/dict") ||
                         u.startsWith("/api/words") ||
                         u.startsWith("/api/scraps") ||
-                        u.equals("/test");
+                        u.startsWith("/api/feedback") ||
+                        u.equals("/test"));
     }
 
     @Override
