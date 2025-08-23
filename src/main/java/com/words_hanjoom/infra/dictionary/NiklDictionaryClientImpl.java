@@ -42,12 +42,204 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
 
     @Override
     public Mono<List<DictEntry>> lookupAllSenses(String surface) {
-        // 만약 실제로 다의어 목록 파싱이 가능하면 여기에 구현.
-        // 일단은 단건을 리스트로 래핑해도 로직은 동작함(스코어링 → 선택/스킵).
-        return quickLookup(surface)
-                .map(List::of)
-                .defaultIfEmpty(List.of());
+        return dicWebClient.get()
+                .uri(b -> b.path("/search.do")
+                        .queryParam("q", surface)
+                        .queryParam("key", apiKey)
+                        .queryParam("req_type", "json")
+                        .queryParam("advanced", "y")
+                        .queryParam("method", "exact")
+                        .queryParam("num", 50)
+                        .build())
+                .retrieve()
+                .bodyToMono(String.class)
+                .doOnNext(j -> log.info("[NIKL] raw: {}", j))     // ★ 원문 확인
+                .map(this::parseToEntries)
+                .onErrorResume(e -> {
+                    log.warn("[NIKL] lookupAllSenses error: {}", e.toString());
+                    return Mono.just(Collections.emptyList());
+                })
+                .defaultIfEmpty(Collections.emptyList());
     }
+
+
+
+    private List<DictEntry> parseToEntries(String json) {
+        List<DictEntry> out = new ArrayList<>();
+        try {
+            JsonNode root = objectMapper.readTree(json);
+
+            // 1) item 리스트를 어디서든 찾아오기 (channel.item | items | item)
+            List<JsonNode> itemList = extractItems(root);
+            if (itemList.isEmpty()) return out;
+
+            for (JsonNode item : itemList) {
+                String lemma   = pickText(item, "word", "headword", "term"); // 표제어
+                long targetCd  = pickLong(item, 0L, "target_code", "targetCode");
+                int supNo      = (int) pickLong(item, 0L, "sup_no", "supNo");
+
+                // 2) sense 배열/단일 모두 처리
+                List<JsonNode> senses = extractSenses(item);
+
+                // 3) sense가 없고 item에 definition이 직접 있을 때(일부 응답)
+                if (senses.isEmpty()) {
+                    String def = pickText(item, "definition", "desc", "sense_def");
+                    if (!lemma.isBlank() || !def.isBlank()) {
+                        out.add(buildEntry(lemma, def, "", null, "", targetCd, supNo));
+                    }
+                    continue;
+                }
+
+                // 4) sense들 파싱
+                for (JsonNode s : senses) {
+                    String def   = pickText(s, "definition", "def", "sense_definition");
+                    String ex    = pickExample(s);
+                    Integer sn   = pickIntObj(s, "sense_no", "senseNo");
+                    String cats  = collectCategories(s); // cat/subject/domain/field...
+
+                    if (lemma.isBlank() && def.isBlank()) continue;
+                    out.add(buildEntry(lemma, def, ex, sn, cats, targetCd, supNo));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[NIKL] parse error: {}", e.toString());
+        }
+        return out;
+    }
+    private List<JsonNode> extractItems(JsonNode root) {
+        List<JsonNode> items = new ArrayList<>();
+
+        // A) channel.item (표준국어대사전/우리말샘 전형)
+        JsonNode channel = root.path("channel");
+        JsonNode chItems = channel.path("item");
+        if (chItems.isArray()) chItems.forEach(items::add);
+        else if (!chItems.isMissingNode() && !chItems.isNull()) items.add(chItems);
+
+        // B) items (신형 계열)
+        if (items.isEmpty()) {
+            JsonNode i1 = root.path("items");
+            if (i1.isArray()) i1.forEach(items::add);
+            else if (!i1.isMissingNode() && !i1.isNull()) {
+                // items가 객체이고 그 안에 item[]인 경우
+                JsonNode nested = i1.path("item");
+                if (nested.isArray()) nested.forEach(items::add);
+                else if (!nested.isMissingNode() && !nested.isNull()) items.add(nested);
+                else items.add(i1); // 그냥 item처럼
+            }
+        }
+
+        // C) 최상위 item[]
+        if (items.isEmpty()) {
+            JsonNode itemTop = root.path("item");
+            if (itemTop.isArray()) itemTop.forEach(items::add);
+            else if (!itemTop.isMissingNode() && !itemTop.isNull()) items.add(itemTop);
+        }
+        return items;
+    }
+
+    private DictEntry buildEntry(String lemma, String def, String ex, Integer sn, String cats, long targetCd, int supNo) {
+        return DictEntry.builder()
+                .lemma(nz(lemma))
+                .definition(nz(def))
+                .example(nz(ex))
+                .categories(nz(cats))
+                .targetCode(targetCd)
+                .senseNo(sn)
+                .shoulderNo((byte) Math.max(0, Math.min(127, supNo)))
+                .synonyms(List.of())
+                .antonyms(List.of())
+                .build();
+    }
+
+    private List<JsonNode> extractSenses(JsonNode item) {
+        List<JsonNode> senses = new ArrayList<>();
+        JsonNode s = item.path("sense");
+        if (s.isArray()) s.forEach(senses::add);
+        else if (!s.isMissingNode() && !s.isNull()) senses.add(s);
+
+        // 일부 응답: sense_info 또는 senses 등 다른 키
+        if (senses.isEmpty()) {
+            for (String alt : List.of("senses", "sense_info", "senseInfo")) {
+                JsonNode altNode = item.path(alt);
+                if (altNode.isArray()) altNode.forEach(senses::add);
+                else if (!altNode.isMissingNode() && !altNode.isNull()) senses.add(altNode);
+            }
+        }
+        return senses;
+    }
+
+    private Integer pickIntObj(JsonNode n, String... keys) {
+        if (n == null) return null;
+        for (String k : keys) {
+            JsonNode v = n.get(k);
+            if (v != null && v.isNumber()) return v.asInt();
+            if (v != null && v.isTextual()) try { return Integer.parseInt(v.asText()); } catch (Exception ignore) {}
+        }
+        return null;
+    }
+
+    private String pickText(JsonNode n, String... keys) {
+        if (n == null) return "";
+        for (String k : keys) {
+            JsonNode v = n.get(k);
+            if (v != null && v.isTextual()) return v.asText().trim();
+        }
+        return "";
+    }
+
+    private long pickLong(JsonNode n, long def, String... keys) {
+        if (n == null) return def;
+        for (String k : keys) {
+            JsonNode v = n.get(k);
+            if (v != null && v.isNumber()) return v.asLong();
+            if (v != null && v.isTextual()) try { return Long.parseLong(v.asText()); } catch (Exception ignore) {}
+        }
+        return def;
+    }
+
+    private static String getText(JsonNode n, String field) {
+        JsonNode v = n.get(field);
+        return (v != null && v.isTextual()) ? v.asText().trim() : "";
+    }
+    private static long getLong(JsonNode n, String field, long def) {
+        JsonNode v = n.get(field);
+        return (v != null && v.isNumber()) ? v.asLong() : def;
+    }
+    private static int getInt(JsonNode n, String field, int def) {
+        JsonNode v = n.get(field);
+        return (v != null && v.isNumber()) ? v.asInt() : def;
+    }
+    private static Integer getIntObj(JsonNode n, String field) {
+        JsonNode v = n.get(field);
+        return (v != null && v.isNumber()) ? v.asInt() : null;
+    }
+
+    private static String getExample(JsonNode sense) {
+        // 흔한 케이스 1) "example": "문장..."
+        JsonNode ex = sense.get("example");
+        if (ex != null && ex.isTextual()) return ex.asText();
+
+        // 케이스 2) "example"가 배열/객체(예: [{"type":"용례","text":"..."}])
+        if (ex != null && ex.isArray() && ex.size() > 0) {
+            JsonNode first = ex.get(0);
+            if (first.isTextual()) return first.asText();
+            JsonNode text = first.get("text");
+            if (text != null && text.isTextual()) return text.asText();
+        }
+        return "";
+    }
+
+    private static String collectCategories(JsonNode sense) {
+        // 곳에 따라 cat/subject/domain/field 등으로 들어올 수 있음. 있는 것만 취합.
+        List<String> cats = new ArrayList<>();
+        for (String key : List.of("cat", "subject", "domain", "field", "classification")) {
+            String v = getText(sense, key);
+            if (!v.isBlank()) cats.add(v);
+        }
+        // 중복 제거 + CSV
+        return String.join(",", new LinkedHashSet<>(cats));
+    }
+
 
     @Override
     public Mono<SearchResponse> search(SearchRequest req) {

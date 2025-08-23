@@ -28,16 +28,13 @@ public class UnknownWordImportListener {
         if (event.comparisonType() != ActivityType.UNKNOWN_WORD) return;
 
         // 기사 본문 로드 → 컨텍스트 생성
-        String context = "";
-        Article article = articleRepository.findById(event.articleId()).orElse(null);
-        if (article != null) {
-            // 제목 + 본문을 컨텍스트로; 필요하면 publisher/category도 이어붙이면 됨
-            context = (nz(article.getTitle()) + " " + nz(article.getContent())).trim();
-        }
+        String context = articleRepository.findById(event.articleId())
+                .map(a -> (nz(a.getTitle()) + " " + nz(a.getContent())).trim())
+                .orElse("");
 
         log.info("[EVT] AFTER_COMMIT received: type={}, userId={}, answer={}",
                 event.comparisonType(), event.userId(), event.userAnswer());
-        unknownWordService.importUnknownWords(event.userId(), event.userAnswer());
+        unknownWordService.importUnknownWords(event.userId(), event.userAnswer(), context);
     }
 
     private static String nz(String s){ return s == null ? "" : s; }

@@ -16,5 +16,6 @@ public interface NiklDictionaryClient {
     Mono<DictEntry> quickLookup(String q);
 
     // ★ 동일 표제어의 모든 뜻(가능한 범위) 반환
-    Mono<List<DictEntry>> lookupAllSenses(String surface);
+    reactor.core.publisher.Mono<java.util.List<com.words_hanjoom.domain.wordbooks.dto.response.DictEntry>>
+    lookupAllSenses(String surface);
 }

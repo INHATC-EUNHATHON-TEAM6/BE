@@ -1,6 +1,8 @@
 package com.words_hanjoom.domain.wordbooks.service;
 
+import com.words_hanjoom.domain.wordbooks.dto.ai.SenseCandidate;
 import com.words_hanjoom.domain.wordbooks.dto.response.DictEntry;
+import com.words_hanjoom.domain.wordbooks.dto.response.ViewResponse;
 import com.words_hanjoom.domain.wordbooks.entity.*;
 import com.words_hanjoom.domain.wordbooks.repository.*;
 import com.words_hanjoom.infra.dictionary.AiDictionaryClient;
@@ -40,6 +42,8 @@ public class UnknownWordService {
     // === 맥락 스코어링 파라미터 ===
     private static final int MIN_SCORE = 3;       // 이 미만이면 맥락 부적합
     private static final int MARGIN_TO_NEXT = 2;  // 1,2위 점수차 작으면 보류
+
+
 
     // ====== 엔드포인트 ======
 
@@ -93,56 +97,174 @@ public class UnknownWordService {
     }
 
     // 맥락 기반 DB → NIKL → AI 순차 폴백
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<SavedWord> saveOne(Long userId, String raw, String context) {
         if (raw == null || raw.isBlank()) return Optional.empty();
 
         final String surface = normalizeKo(raw);
         final String plain   = surface.replaceAll("[-·ㆍ‐–—]", "");
-        log.debug("[WORD] saveOne userId={} surface='{}' ctx='{}'", userId, surface, context);
+        log.debug("[WORD] saveOne userId={} surface='{}' ctx?={}", userId, surface, context != null);
 
-        // 1) DB 다중 후보 조회 → 맥락 스코어링 선택
+        // 1) DB 우선
         List<Word> dbCands = new ArrayList<>();
         dbCands.addAll(wordRepository.findAllByWordName(surface));
         dbCands.addAll(wordRepository.findLooselyByNameMulti(surface, plain));
+        log.info("[CHK] DB candidates '{}' = {}", surface, dbCands.size());
+        dbCands.stream().limit(5).forEach(w ->
+                log.info("[CHK] DB[{}] tc={} sense={} cat={} def={}",
+                        w.getWordId(), w.getTargetCode(), w.getSenseNo(),
+                        w.getWordCategory(), cut(nz(w.getDefinition()), 40)));
 
-        Optional<Word> bestDb = selectBestDbCandidate(dbCands, context);
-        if (bestDb.isPresent()) {
-            Word w = bestDb.get();
-            log.info("[WORD] DB HIT with context '{}' → wordId={}", surface, w.getWordId());
-            mapIntoWordbook(userId, w.getWordId());
-            return Optional.of(new SavedWord(surface, w.getWordName(), w.getWordId()));
+        if (!dbCands.isEmpty()) {
+            int pick = -1;
+            if (context != null && !context.isBlank()) {
+                // 맥락으로 DB 후보 중 1개 선택 (AI)
+                pick = aiDictionaryClient
+                        .pickBestWordIndexFromDbCandidates(surface, context, dbCands)
+                        .blockOptional().orElse(-1);
+            }
+            Word chosen = (pick >= 0 && pick < dbCands.size()) ? dbCands.get(pick) : dbCands.get(0);
+            log.info("[WORD] DB-PICK '{}' → wordId={}, tc={}, sense={}",
+                    surface, chosen.getWordId(), chosen.getTargetCode(), chosen.getSenseNo());
+            mapIntoWordbook(userId, chosen.getWordId());
+            return Optional.of(new SavedWord(surface, chosen.getWordName(), chosen.getWordId()));
         }
 
-        // 2) 국립국어원 다의어 목록 → 맥락 스코어링
-        List<DictEntry> niklSenses = fetchNiklAllSenses(surface);
-        Optional<DictEntry> bestNikl = selectBestEntry(niklSenses, context);
-        if (bestNikl.isPresent()) {
-            Word saved = saveResolvedEntry(userId, surface, bestNikl.get());
+        // 2) NIKL 후보 조회 → (맥락 + AI)로 1개 선택 → view로 보강
+        List<DictEntry> niklCands =
+                fetchCandidates(surface, 20).blockOptional().orElse(List.of());
+        log.info("[CHK] NIKL candidates '{}' = {}", surface, niklCands.size());
+        niklCands.stream().limit(5).forEach(e ->
+                log.info("[CHK] NIKL cand tc={} sense={} def={}",
+                        e.getTargetCode(), e.getSenseNo(),
+                        cut(nz(e.getDefinition()), 40)));
+
+        if (!niklCands.isEmpty()) {
+            DictEntry picked = null;
+
+            if (context != null && !context.isBlank()) {
+                // 방법 A: 후보 배열을 LLM에 던져 “맥락에 맞는 1개” 고르게
+                // └ AiDictionaryClient에 pickBestFromNiklCandidates(...)가 있으면 그걸 권장
+                picked = aiDictionaryClient
+                        .pickBestFromNiklCandidates(surface, context, niklCands)
+                        .onErrorResume(e -> Mono.empty())
+                        .blockOptional()
+                        // 실패 시 간단 휴리스틱
+                        .orElseGet(() -> selectBestEntry(niklCands, context).orElse(niklCands.get(0)));
+            } else {
+                // 맥락이 없으면 일단 첫 후보
+                picked = niklCands.get(0);
+            }
+
+            // 선택한 후보를 view.do로 “보강” (정의/예문/카테고리/유·반의어 등)
+            DictEntry enriched = enrichWithView(picked);
+            Word saved = saveResolvedEntry(userId, surface, enriched);
             return Optional.of(new SavedWord(surface, saved.getWordName(), saved.getWordId()));
         }
 
-        // 3) OpenAI 폴백(JSON) — 맥락 전달
+        // 3) 최후 폴백: AI 생성
         DictEntry ai = fetchAiEntry(surface, context);
         if (ai != null) {
             Word saved = saveResolvedEntry(userId, surface, ai);
             return Optional.of(new SavedWord(surface, saved.getWordName(), saved.getWordId()));
         }
 
-        // 4) 전부 못 고르면 보류
-        log.info("[WORD] No suitable sense for '{}' (context={})", surface, context);
+        log.info("[WORD] No sense resolved for '{}' (AI-only)", surface);
         return Optional.empty();
     }
 
-    // ===== 국립국어원/AI 호출 =====
-    private List<DictEntry> fetchNiklAllSenses(String surface) {
+    private DictEntry enrichWithView(DictEntry base) {
         try {
-            return dictClient.lookupAllSenses(surface)
-                    .blockOptional().orElse(List.of());
+            Long tc = base.getTargetCode();
+            if (tc == null || tc <= 0) return base;
+
+            ViewResponse vr = dictClient.view(tc).block();
+            if (vr == null || vr.getChannel() == null || vr.getChannel().getItem() == null || vr.getChannel().getItem().isEmpty()) {
+                return base;
+            }
+            var item = vr.getChannel().getItem().get(0);
+
+            // sense 매칭: 같은 senseNo가 있으면 그걸, 없으면 첫 sense
+            ViewResponse.Sense sense = null;
+            if (item.getSense() != null && !item.getSense().isEmpty()) {
+                Integer want = base.getSenseNo();
+                if (want != null) {
+                    for (var s : item.getSense()) {
+                        if (String.valueOf(want).equals(s.getSenseNo())) { sense = s; break; }
+                    }
+                }
+                if (sense == null) sense = item.getSense().get(0);
+            }
+
+            String def = base.getDefinition();
+            String ex  = base.getExample();
+            String cats = base.getCategories();
+            List<String> syn = base.getSynonyms() == null ? List.of() : base.getSynonyms();
+            List<String> ant = base.getAntonyms() == null ? List.of() : base.getAntonyms();
+
+            if (sense != null) {
+                if (sense.getDefinition() != null && !sense.getDefinition().isBlank()) def = sense.getDefinition();
+                var exList = sense.getExample();
+                if (exList != null && !exList.isEmpty()) ex = String.join(" | ", exList);
+
+                if (sense.getCatInfo() != null && !sense.getCatInfo().isEmpty()) {
+                    cats = sense.getCatInfo().stream()
+                            .map(ViewResponse.CatInfo::getCat)
+                            .filter(Objects::nonNull)
+                            .map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .distinct()
+                            .collect(Collectors.joining(", "));
+                }
+                // 유/반의어 수집(lexical_info + relation)
+                LinkedHashSet<String> synSet = new LinkedHashSet<>(syn);
+                LinkedHashSet<String> antSet = new LinkedHashSet<>(ant);
+
+                if (sense.getLexicalInfo() != null) {
+                    for (var lx : sense.getLexicalInfo()) {
+                        String t = lx.getType() == null ? "" : lx.getType().replace(" ", "");
+                        String w = lx.getWord();
+                        if (w == null || w.isBlank()) continue;
+                        if (t.contains("유의") || t.contains("동의") || t.contains("비슷")) synSet.add(w);
+                        if (t.contains("반의") || t.contains("반대") || t.contains("상반")) antSet.add(w);
+                    }
+                }
+                if (sense.getRelation() != null) {
+                    for (var r : sense.getRelation()) {
+                        String t = r.getType() == null ? "" : r.getType().replace(" ", "");
+                        String w = r.getWord();
+                        if (w == null || w.isBlank()) continue;
+                        if (t.contains("유의") || t.contains("동의") || t.contains("비슷")) synSet.add(w);
+                        if (t.contains("반의") || t.contains("반대") || t.contains("상반")) antSet.add(w);
+                    }
+                }
+                syn = new ArrayList<>(synSet);
+                ant = new ArrayList<>(antSet);
+            } else if (item.getDefinition() != null && !item.getDefinition().isBlank()) {
+                def = item.getDefinition();
+            }
+
+            return DictEntry.builder()
+                    .lemma(base.getLemma())
+                    .targetCode(base.getTargetCode())
+                    .shoulderNo(base.getShoulderNo())
+                    .senseNo(base.getSenseNo())
+                    .definition(def)
+                    .example(ex)
+                    .categories((cats == null || cats.isBlank()) ? "일반" : cats)
+                    .synonyms(syn)
+                    .antonyms(ant)
+                    .build();
         } catch (Exception e) {
-            log.warn("[DICT] lookupAllSenses error '{}': {}", surface, e.toString());
-            return List.of();
+            log.warn("[DICT] enrichWithView error: {}", e.toString());
+            return base;
         }
+    }
+
+    public Mono<List<DictEntry>> fetchCandidates(String surface, int limit) {
+        int cap = Math.max(1, Math.min(limit, 20));
+        return dictClient.lookupAllSenses(surface)
+                .map(list -> list.stream().limit(cap).toList());
     }
 
     private DictEntry fetchAiEntry(String surface, String context) {
@@ -369,10 +491,11 @@ public class UnknownWordService {
         return s;
     }
 
+
     // ===== 토큰화/유틸 =====
 
     private List<String> tokenizeUnknownWords(String text) {
-        if (text == null || text.isBlank()) return List.of();
+        if (text == null || text.isBlank()) return java.util.List.of();
         String noParen = TOKEN_PAREN.matcher(text).replaceAll("");
         return Arrays.stream(TOKEN_SEP.split(noParen))
                 .map(s -> s.replaceAll("\\s+", ""))
@@ -411,6 +534,8 @@ public class UnknownWordService {
 
     public record SavedWord(String surface, String wordName, Long wordId) {}
     public record Result(Long wordbookId, List<SavedWord> words) {}
+
+    private static String nz(String s) { return s == null ? "" : s; }
 
     private static class Scored<T> { final T item; final int score; Scored(T i, int s){ item=i; score=s; } }
 }

@@ -33,6 +33,8 @@ public class ViewResponse {
 
         private String pos;
 
+        private String definition;
+
         @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
         private List<Sense> sense; // 의미 배열
     }
