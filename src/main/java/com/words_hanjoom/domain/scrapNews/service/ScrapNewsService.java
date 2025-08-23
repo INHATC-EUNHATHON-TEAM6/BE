@@ -3,34 +3,43 @@ package com.words_hanjoom.domain.scrapNews.service;
 import com.words_hanjoom.domain.crawling.entity.Article;
 import com.words_hanjoom.domain.crawling.repository.ArticleRepository;
 import com.words_hanjoom.domain.scrapNews.dto.response.ScrapNewsResponseDto;
-import com.words_hanjoom.domain.users.entity.UserCategory;
+import com.words_hanjoom.domain.users.entity.User;
 import com.words_hanjoom.domain.users.repository.UserCategoryRepository;
+import com.words_hanjoom.domain.users.repository.UserRepository;
 import com.words_hanjoom.global.security.TokenProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.RequestMapping;
 
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class ScrapNewsService {
 
     private final UserCategoryRepository userCategoryRepository;
+    private final UserRepository userRepository;
     private final ArticleRepository articleRepository;
     private final TokenProvider tokenProvider;
 
     // 1. 사용자 아이디 가져오기
-    public Long getLoginId(String token) {
-        // 1-1. 토큰에서 사용자 아이디 추출
-        Long userId = Long.valueOf(tokenProvider.getLoginIdFromToken(token));
-        if (userId == null) {
-            throw new IllegalArgumentException("유효하지 않은 토큰입니다.");
+    public Long getUserId(String token) {
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("토큰이 비어 있습니다.");
         }
 
-        System.out.println("service userId: " + userId);
-        return userId;
+        // 토큰의 subject(예: 이메일/로그인ID) 꺼내기
+        final String loginId = tokenProvider.getLoginIdFromToken(token);
+        if (loginId == null || loginId.isBlank()) {
+            throw new IllegalArgumentException("토큰에서 loginId(subject)를 찾을 수 없습니다.");
+        }
+
+        // 1-2. 사용자 아이디 조회
+        User user = userRepository.findByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 loginId의 사용자를 찾을 수 없습니다."));
+
+        return user.getUserId();
     }
 
     // 2. 사용자 아이디가 선택한 관심 카테고리 추출

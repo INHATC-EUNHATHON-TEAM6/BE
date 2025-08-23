@@ -53,9 +53,9 @@ public class SecurityConfig {
                                 "/api/feedback/**",
                                 "/api/dev/**",
                                 "/test",
+                                "/api/scrap-news/**",   // 스크랩활동 버튼 클릭 시 뉴스기사 1개 제공
 
                                 // Swagger / Docs
-                                "/api/scrap-news/**",
                                 "/v3/api-docs/**",
                                 "/v3/api-docs/swagger-config",
                                 "/swagger-ui/**",
