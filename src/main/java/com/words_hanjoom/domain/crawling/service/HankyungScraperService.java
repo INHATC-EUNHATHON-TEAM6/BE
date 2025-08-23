@@ -40,55 +40,62 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
     @Override
     public CrawlResult scrape(String fieldName) throws IOException {
         int savedCount = 0;
+
         List<SectionRequest> allArticleLinks = new ArrayList<>();
 
         Map<String, Object> data = hankyungFields.get(fieldName);
         if (data == null) {
-            // 알 수 없는 카테고리일 경우 예외를 던집니다.
             throw new IllegalArgumentException("알 수 없는 카테고리: " + fieldName);
         }
+
         String field = (String) data.get("field");
         String[] subFields = (String[]) data.get("subFields");
 
-        for (String subField : subFields) {
-            String sectionUrl = HANKYUNG_BASE_URL + "/" + field + "/" + subField;
-
-            int pageCount = getSubCategoryPageCount(sectionUrl);
-
-            // 페이지 개수만큼 반복 -> 데이터 과다로 인해 서브카테고리별 5페이지로 제한
-            for (int pageNo = 1; pageNo <= 5; pageNo++) {
-                String paginatedUrl = sectionUrl + "?page=" + pageNo;
-                List<SectionRequest> links = subCategoryCrawl(paginatedUrl, fieldName);
-
-                if (links.isEmpty()) {
-                    // CategoryCrawl에서 첫 기사 중복 → 이 섹션 종료
-                    System.out.printf("섹션 조기 종료: %s (page=%d)\n", sectionUrl, pageNo);
-                    break;
-                }
-
-                System.out.printf("크롤링 시작: %s, 페이지: %d\n", paginatedUrl, pageNo);
-
-                try {
-                    allArticleLinks.addAll(subCategoryCrawl(paginatedUrl, fieldName));
-                } catch (IOException e) {
-                    System.err.printf("기사 링크 크롤링 실패: %s, 오류: %s\n", paginatedUrl, e.getMessage());
-                }
-
-                if(pageNo%10 == 0) {
-                    // 10페이지마다 크롤링 진행 상황 출력
-                    savedCount += hkNewsCrawlService.newsCrawl(allArticleLinks);
-                    allArticleLinks.clear(); // 크롤링 후 링크 초기화
-                }
-            }
-
-            try {
-                savedCount += hkNewsCrawlService.newsCrawl(allArticleLinks);
-            } catch (IOException e) {
-                e.printStackTrace();
+        // ✅ subFields가 없으면 상위 섹션(/{field})만 크롤
+        if (subFields == null || subFields.length == 0) {
+            savedCount += crawlSection(fieldName, HANKYUNG_BASE_URL + "/" + field);
+        } else {
+            for (String sub : subFields) {
+                savedCount += crawlSection(fieldName, HANKYUNG_BASE_URL + "/" + field + "/" + sub);
             }
         }
 
         return new CrawlResult(savedCount);
+    }
+
+    /** 섹션(URL) 단위 크롤링 공통 로직 */
+    private int crawlSection(String fieldName, String sectionUrl) throws IOException {
+        int saved = 0;
+
+//        int pageCount = getSubCategoryPageCount(sectionUrl);
+
+        // 페이지 개수 제한: 1~3 -> 기존에 페이지 수만큼 돌았지만 너무 많은 데이터로 인하여 제한
+        for (int pageNo = 1; pageNo <= 3; pageNo++) {
+            String paginatedUrl = sectionUrl + "?page=" + pageNo;
+
+            List<SectionRequest> links;
+            try {
+                links = subCategoryCrawl(paginatedUrl, fieldName);
+            } catch (IOException e) {
+                System.err.printf("기사 링크 크롤링 실패: %s, 오류: %s%n", paginatedUrl, e.getMessage());
+                continue; // 다음 페이지 시도
+            }
+
+            if (links == null || links.isEmpty()) {
+                System.out.printf("섹션 조기 종료: %s (page=%d)%n", sectionUrl, pageNo);
+                break;
+            }
+
+            System.out.printf("크롤링 시작: %s, 페이지: %d%n", paginatedUrl, pageNo);
+
+            try {
+                saved += hkNewsCrawlService.newsCrawl(links);
+            } catch (IOException e) {
+                System.err.printf("기사 저장 실패: %s, 오류: %s%n", paginatedUrl, e.getMessage());
+            }
+        }
+
+        return saved;
     }
 
     // 서브 카테고리 페이지 수 확인

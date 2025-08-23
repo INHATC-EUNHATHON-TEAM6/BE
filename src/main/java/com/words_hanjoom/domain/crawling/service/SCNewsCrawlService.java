@@ -65,7 +65,7 @@ public class SCNewsCrawlService implements INewsContentCrawl {
                     continue;
                 }
 
-                // Article 객체 생성 및 DB에 저장
+                // Article 객체 생성
                 Article article = Article.builder()
                         .categoryId(sectionRequest.getCategoryId())
                         .title(title)
