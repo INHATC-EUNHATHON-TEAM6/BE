@@ -1,6 +1,7 @@
 package com.words_hanjoom.domain.wordbooks.service;
 
 import com.words_hanjoom.domain.wordbooks.dto.ai.SenseCandidate;
+import com.words_hanjoom.domain.wordbooks.dto.response.AiPickResult;
 import com.words_hanjoom.domain.wordbooks.dto.response.DictEntry;
 import com.words_hanjoom.domain.wordbooks.dto.response.ViewResponse;
 import com.words_hanjoom.domain.wordbooks.entity.*;
@@ -90,12 +91,6 @@ public class UnknownWordService {
         return new Result(wordbook.getWordbookId(), saved);
     }
 
-    // 기존 시그니처 유지(맥락 null)
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public Optional<SavedWord> saveOne(Long userId, String raw) {
-        return saveOne(userId, raw, null);
-    }
-
     // 맥락 기반 DB → NIKL → AI 순차 폴백
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Optional<SavedWord> saveOne(Long userId, String raw, String context) {
@@ -105,10 +100,12 @@ public class UnknownWordService {
         final String plain   = surface.replaceAll("[-·ㆍ‐–—]", "");
         log.debug("[WORD] saveOne userId={} surface='{}' ctx?={}", userId, surface, context != null);
 
-        // 1) DB 우선
+        // === 1) DB 우선 + 중복 제거 ===
         List<Word> dbCands = new ArrayList<>();
         dbCands.addAll(wordRepository.findAllByWordName(surface));
         dbCands.addAll(wordRepository.findLooselyByNameMulti(surface, plain));
+        dbCands = dedupBySense(dbCands); // ★ (tc, sense_no) 기준 중복 제거
+
         log.info("[CHK] DB candidates '{}' = {}", surface, dbCands.size());
         dbCands.stream().limit(5).forEach(w ->
                 log.info("[CHK] DB[{}] tc={} sense={} cat={} def={}",
@@ -116,53 +113,96 @@ public class UnknownWordService {
                         w.getWordCategory(), cut(nz(w.getDefinition()), 40)));
 
         if (!dbCands.isEmpty()) {
-            int pick = -1;
+            // 컨텍스트가 있으면: '맥락 적합' 후보만 남기기
             if (context != null && !context.isBlank()) {
-                // 맥락으로 DB 후보 중 1개 선택 (AI)
-                pick = aiDictionaryClient
-                        .pickBestWordIndexFromDbCandidates(surface, context, dbCands)
-                        .blockOptional().orElse(-1);
+                List<Word> fits = new ArrayList<>();
+                for (Word w : dbCands) {
+                    boolean ok = aiDictionaryClient.isDbCandidateFit(surface, context, w)
+                            .onErrorReturn(false)
+                            .blockOptional().orElse(false);
+                    if (ok) fits.add(w);
+                }
+
+                if (!fits.isEmpty()) {
+                    int pick = (fits.size() == 1) ? 0
+                            : aiDictionaryClient.pickBestWordIndexFromDbCandidates(surface, context, fits)
+                            .onErrorReturn(-1)
+                            .blockOptional().orElse(-1);
+                    Word chosen = (pick >= 0 && pick < fits.size()) ? fits.get(pick) : fits.get(0);
+
+                    log.info("[WORD] DB-PICK '{}' (context-fit) → wordId={}, tc={}, sense={}",
+                            surface, chosen.getWordId(), chosen.getTargetCode(), chosen.getSenseNo());
+                    mapIntoWordbook(userId, chosen.getWordId());
+                    return Optional.of(new SavedWord(surface, chosen.getWordName(), chosen.getWordId()));
+                } else {
+                    // 맥락에 맞는 DB 후보가 없으면 NIKL로 폴백
+                    log.info("[WORD] DB has candidates, but none fit context → fallthrough to NIKL.");
+                }
+            } else {
+                // 컨텍스트가 없으면 첫 후보로 확정 (기존 동작 유지)
+                Word chosen = dbCands.get(0);
+                log.info("[WORD] DB-PICK '{}' → wordId={}, tc={}, sense={}",
+                        surface, chosen.getWordId(), chosen.getTargetCode(), chosen.getSenseNo());
+                mapIntoWordbook(userId, chosen.getWordId());
+                return Optional.of(new SavedWord(surface, chosen.getWordName(), chosen.getWordId()));
             }
-            Word chosen = (pick >= 0 && pick < dbCands.size()) ? dbCands.get(pick) : dbCands.get(0);
-            log.info("[WORD] DB-PICK '{}' → wordId={}, tc={}, sense={}",
-                    surface, chosen.getWordId(), chosen.getTargetCode(), chosen.getSenseNo());
-            mapIntoWordbook(userId, chosen.getWordId());
-            return Optional.of(new SavedWord(surface, chosen.getWordName(), chosen.getWordId()));
         }
 
-        // 2) NIKL 후보 조회 → (맥락 + AI)로 1개 선택 → view로 보강
-        List<DictEntry> niklCands =
-                fetchCandidates(surface, 20).blockOptional().orElse(List.of());
+        // 2) NIKL 후보 조회 → (맥락 + AI[target_code]) → view 보강
+        List<DictEntry> niklCands = fetchCandidates(surface, 20).blockOptional().orElse(List.of());
         log.info("[CHK] NIKL candidates '{}' = {}", surface, niklCands.size());
         niklCands.stream().limit(5).forEach(e ->
                 log.info("[CHK] NIKL cand tc={} sense={} def={}",
-                        e.getTargetCode(), e.getSenseNo(),
-                        cut(nz(e.getDefinition()), 40)));
+                        e.getTargetCode(), e.getSenseNo(), cut(nz(e.getDefinition()), 40)));
 
         if (!niklCands.isEmpty()) {
             DictEntry picked = null;
 
             if (context != null && !context.isBlank()) {
-                // 방법 A: 후보 배열을 LLM에 던져 “맥락에 맞는 1개” 고르게
-                // └ AiDictionaryClient에 pickBestFromNiklCandidates(...)가 있으면 그걸 권장
-                picked = aiDictionaryClient
-                        .pickBestFromNiklCandidates(surface, context, niklCands)
-                        .onErrorResume(e -> Mono.empty())
-                        .blockOptional()
-                        // 실패 시 간단 휴리스틱
-                        .orElseGet(() -> selectBestEntry(niklCands, context).orElse(niklCands.get(0)));
+                // V2: target_code 직접 선택
+                AiPickResult res = aiDictionaryClient
+                        .pickBestFromNiklCandidatesV2(surface, context, niklCands)
+                        // idx=null, tc=null, senseNo=null, conf=0.0 으로 기본값
+                        .onErrorReturn(new AiPickResult(null, null, null, 0.0))
+                        .block();
+
+                if (res != null && res.getTargetCode() != null) {
+                    Long tc = res.getTargetCode();
+                    picked = niklCands.stream()
+                            .filter(e -> Objects.equals(e.getTargetCode(), tc))
+                            .findFirst()
+                            .orElse(null);
+
+
+                    if (picked != null) {
+                        // ★ 여기서 필드 보강
+                        enrichFromNikl(niklCands, res, picked);
+                    }
+
+                    log.info("[AI] picked by target_code tc={}, conf={}", tc, res.getConfidence());
+                }
+
+                // 백업: 옛날 choice-index 응답
+                if (picked == null) {
+                    int idx0 = normalizeIdx(res != null ? res.getIdx() : null, niklCands.size()); // 0-base
+                    picked = niklCands.get(idx0);
+                    log.info("[AI] picked by index idx={}, tc={}, conf={}",
+                            idx0 + 1, picked.getTargetCode(),
+                            (res != null ? res.getConfidence() : null));
+                }
             } else {
-                // 맥락이 없으면 일단 첫 후보
                 picked = niklCands.get(0);
             }
 
-            // 선택한 후보를 view.do로 “보강” (정의/예문/카테고리/유·반의어 등)
-            DictEntry enriched = enrichWithView(picked);
+            // view.do 로 유의어/반의어/카테고리/예문/sense_no 보강
+            DictEntry enriched = dictClient.enrichFromView(picked)
+                    .blockOptional().orElse(picked);
+
             Word saved = saveResolvedEntry(userId, surface, enriched);
             return Optional.of(new SavedWord(surface, saved.getWordName(), saved.getWordId()));
         }
 
-        // 3) 최후 폴백: AI 생성
+        // === 3) 최후 폴백: AI 생성 ===
         DictEntry ai = fetchAiEntry(surface, context);
         if (ai != null) {
             Word saved = saveResolvedEntry(userId, surface, ai);
@@ -172,6 +212,17 @@ public class UnknownWordService {
         log.info("[WORD] No sense resolved for '{}' (AI-only)", surface);
         return Optional.empty();
     }
+
+    // (tc, sense_no) 기준 중복 제거
+    private List<Word> dedupBySense(List<Word> list) {
+        LinkedHashMap<String, Word> map = new LinkedHashMap<>();
+        for (Word w : list) {
+            String key = (w.getTargetCode()==null?0L:w.getTargetCode()) + "#" + (w.getSenseNo()==null?0:w.getSenseNo());
+            map.putIfAbsent(key, w);
+        }
+        return new ArrayList<>(map.values());
+    }
+
 
     private DictEntry enrichWithView(DictEntry base) {
         try {
@@ -282,48 +333,49 @@ public class UnknownWordService {
     }
 
     // ===== “선택된 뜻”을 저장(기존 병합 로직 재사용) =====
-    private Word saveResolvedEntry(Long userId, String surface, DictEntry entry) {
-        final String wordName   = cut(entry.getLemma(), LEN_WORD_NAME);
-        final String definition = cut(entry.getDefinition(), LEN_DEF);
-        final String example    = cut(entry.getExample(), LEN_EXAMPLE);
-        final String cats       = (entry.getCategories()==null || entry.getCategories().isBlank()) ? "일반" : entry.getCategories();
-        final Long   targetCode = Optional.ofNullable(entry.getTargetCode()).orElse(0L); // AI면 0
-        final List<String> syns = entry.getSynonyms()==null? List.of() : entry.getSynonyms();
-        final List<String> ants = entry.getAntonyms()==null? List.of() : entry.getAntonyms();
-        final byte shoulderNo   = entry.getShoulderNo();
+    private Word saveResolvedEntry(Long userId, String surface, DictEntry e) {
+        final Byte shoulderSafe = Optional.ofNullable(e.getShoulderNo()).orElse((byte) 0);
+        final Integer senseSafe = e.getSenseNo();
 
-        Integer senseNo = entry.getSenseNo();
-        if (targetCode == 0L) {
-            senseNo = allocateGlobalAiSenseNo(); // (0, MAX+1)
-        }
-        final int senseNoSafe = (senseNo == null) ? 0 : senseNo;
+        // (target_code, sense_no)로만 존재 여부 판단
+        Optional<Word> opt = wordRepository.findByTargetCodeAndSenseNo(e.getTargetCode(), senseSafe);
 
-        Word saved = wordRepository.findByWordName(wordName)
-                .map(w -> mergeIntoExistingWord(w, targetCode, senseNoSafe, definition, example, cats, shoulderNo, syns, ants))
-                .orElseGet(() -> saveNewWordWithRetry(
-                        Word.builder()
-                                .wordName(wordName)
-                                .definition(definition)
-                                .wordCategory(cats)
-                                .shoulderNo(shoulderNo)
-                                .example(example)
-                                .targetCode(targetCode)
-                                .senseNo(senseNoSafe)
-                                .synonym(joinList(syns))
-                                .antonym(joinList(ants))
-                                .build(),
-                        targetCode
-                ));
+        Word saved;
+        if (opt.isPresent()) {
+            // 이미 있는 뜻이면 "보충"만 하고 tc/sense는 절대 바꾸지 말기
+            Word w = opt.get();
+            boolean dirty = false;
 
-        // PK 보장: 혹시 null이면 DB에서 다시 가져와서 ID 확보
-        if (saved.getWordId() == null) {
-            saved = wordRepository.findByWordName(wordName)
-                    .orElseThrow(() -> new IllegalStateException("Word saved but not found: " + wordName));
+            if ((w.getDefinition() == null || w.getDefinition().isBlank()) && e.getDefinition() != null) {
+                w.setDefinition(e.getDefinition()); dirty = true;
+            }
+            if ((w.getExample() == null || w.getExample().isBlank()) && e.getExample() != null) {
+                w.setExample(e.getExample()); dirty = true;
+            }
+            if ((w.getWordCategory() == null || w.getWordCategory().isBlank()) && e.getCategories() != null) {
+                w.setWordCategory(e.getCategories()); dirty = true;
+            }
+            // syn/ant 병합 로직이 있으면 여기서만
+
+            saved = dirty ? wordRepository.saveAndFlush(w) : w;
+        } else {
+            // 새 뜻은 절대 기존 row 재사용/수정하지 말고 "신규 row" 생성
+            Word w = new Word();
+            w.setWordName(surface);
+            w.setTargetCode(e.getTargetCode());
+            w.setSenseNo(senseSafe);
+            w.setWordCategory(Objects.toString(e.getCategories(), ""));
+            w.setDefinition(Objects.toString(e.getDefinition(), ""));
+            w.setExample(Objects.toString(e.getExample(), ""));
+            // syn/ant 세팅도 여기에
+            saved = wordRepository.saveAndFlush(w);
         }
 
         mapIntoWordbook(userId, saved.getWordId());
-        log.info("[WORD] saved '{}' → wordId={}, tc={}, sense={}",
+        log.info("[WORD] saved '{}' → id={}, tc={}, sense={}",
                 surface, saved.getWordId(), saved.getTargetCode(), saved.getSenseNo());
+
+        debugDumpWordRows(surface);
         return saved;
     }
 
@@ -366,25 +418,60 @@ public class UnknownWordService {
         return false;
     }
 
-    private Word mergeIntoExistingWord(Word w, Long targetCode, int senseNoSafe,
-                                       String definition, String example, String cats, byte shoulderNo,
-                                       List<String> syns, List<String> ants) {
+    private Word mergeIntoExistingWord(
+            Word w, Long targetCode, int senseNoSafe,
+            String definition, String example, String cats, byte shoulderNo,
+            List<String> syns, List<String> ants
+    ) {
         boolean dirty = false;
 
-        String curCat = w.getWordCategory();
-        boolean needCatUpdate = curCat == null || curCat.isBlank() || "일반어".equals(curCat) || NUM_CSV.matcher(curCat).matches();
-        if (needCatUpdate && !cats.isBlank() && !cats.equals(curCat)) { w.setWordCategory(cats); dirty = true; }
+        // target_code: 0(또는 null) → 양수로만 승격, 이미 값 있으면 그대로 유지
+        if ((w.getTargetCode() == null || w.getTargetCode() == 0L)
+                && targetCode != null && targetCode > 0) {
+            w.setTargetCode(targetCode);
+            dirty = true;
+        }
 
-        if (w.getTargetCode() == null || w.getTargetCode() == 0L) { w.setTargetCode(targetCode); dirty = true; }
-        if ((w.getDefinition() == null || w.getDefinition().isBlank()) && !definition.isBlank()) { w.setDefinition(definition); dirty = true; }
-        if ((w.getExample() == null || w.getExample().isBlank()) && !example.isBlank()) { w.setExample(example); dirty = true; }
-        if (w.getShoulderNo() == 0 && shoulderNo != 0) { w.setShoulderNo(shoulderNo); dirty = true; }
-        if (w.getSenseNo() == null || w.getSenseNo() == 0) { w.setSenseNo(senseNoSafe); dirty = true; }
+        // sense_no: 비어 있으면만 채움(유니크 충돌 방지)
+        if ((w.getSenseNo() == null || w.getSenseNo() == 0) && senseNoSafe > 0) {
+            w.setSenseNo(senseNoSafe);
+            dirty = true;
+        }
+
+        // 카테고리: 비었거나 ‘일반/일반어/숫자CSV’일 때만 갱신
+        String curCat = w.getWordCategory();
+        boolean needCatUpdate = curCat == null || curCat.isBlank()
+                || "일반".equals(curCat) || "일반어".equals(curCat)
+                || NUM_CSV.matcher(curCat).matches();
+        if (needCatUpdate && cats != null && !cats.isBlank() && !cats.equals(curCat)) {
+            w.setWordCategory(cats);
+            dirty = true;
+        }
+
+        if ((w.getDefinition() == null || w.getDefinition().isBlank()) && definition != null && !definition.isBlank()) {
+            w.setDefinition(definition);
+            dirty = true;
+        }
+        if ((w.getExample() == null || w.getExample().isBlank()) && example != null && !example.isBlank()) {
+            w.setExample(example);
+            dirty = true;
+        }
+
+        if (w.getShoulderNo() == 0 && shoulderNo != 0) {
+            w.setShoulderNo(shoulderNo);
+            dirty = true;
+        }
 
         String mergedSyn = mergeCsv(w.getSynonym(), syns);
-        if (!Objects.equals(nzCsv(w.getSynonym()), mergedSyn)) { w.setSynonym(mergedSyn); dirty = true; }
+        if (!Objects.equals(nzCsv(w.getSynonym()), mergedSyn)) {
+            w.setSynonym(mergedSyn);
+            dirty = true;
+        }
         String mergedAnt = mergeCsv(w.getAntonym(), ants);
-        if (!Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) { w.setAntonym(mergedAnt); dirty = true; }
+        if (!Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) {
+            w.setAntonym(mergedAnt);
+            dirty = true;
+        }
 
         return dirty ? wordRepository.saveAndFlush(w) : w;
     }
@@ -433,6 +520,22 @@ public class UnknownWordService {
         return Optional.of(scored.get(0).item);
     }
 
+    /** LLM이 target_code만 준 경우, 동일 tc의 NIKL 후보로부터 필드 보강 */
+    private void enrichFromNikl(List<DictEntry> niklCands, AiPickResult r, DictEntry e) {
+        niklCands.stream()
+                .filter(c -> Objects.equals(c.getTargetCode(), r.getTargetCode()))
+                .findFirst()
+                .ifPresent(c -> {
+                    if (e.getShoulderNo() == null)
+                        e.setShoulderNo(Optional.ofNullable(c.getShoulderNo()).orElse((byte) 0));
+                    if ((e.getSenseNo() == null || e.getSenseNo() == 0) && c.getSenseNo() != null)
+                        e.setSenseNo(c.getSenseNo());
+                    if (e.getDefinition() == null)  e.setDefinition(c.getDefinition());
+                    if (e.getCategories() == null)  e.setCategories(c.getCategories());
+                    if (e.getExample() == null)     e.setExample(c.getExample());
+                });
+    }
+
     private String normalizeCtx(String s) {
         return s.toLowerCase().replaceAll("\\s+", " ").replaceAll("[^0-9a-z가-힣·]", " ");
     }
@@ -465,6 +568,15 @@ public class UnknownWordService {
         return s;
     }
 
+    private int normalizeIdx(Integer choice, int size) {
+        if (choice == null) return -1;
+        // choice가 1~N 으로 올 수도 있어 보정
+        if (choice >= 1 && choice <= size) return choice - 1;
+        // 0~N-1 로 왔으면 그대로
+        if (choice >= 0 && choice < size) return choice;
+        return -1;
+    }
+
     private int textHits(String ctx, String text, int weight) {
         if (text == null || text.isBlank()) return 0;
         int s = 0;
@@ -493,6 +605,16 @@ public class UnknownWordService {
 
 
     // ===== 토큰화/유틸 =====
+
+    // --- 디버그용: 동일 표제어의 모든 행 덤프 ---
+    private void debugDumpWordRows(String surface) {
+        List<Word> rows = wordRepository.findAllByWordName(surface);
+        log.info("[DBG] rows for '{}' = {}", surface, rows.size());
+        for (Word w : rows) {
+            log.info("[DBG] id={}, tc={}, sense={}, name='{}'",
+                    w.getWordId(), w.getTargetCode(), w.getSenseNo(), w.getWordName());
+        }
+    }
 
     private List<String> tokenizeUnknownWords(String text) {
         if (text == null || text.isBlank()) return java.util.List.of();

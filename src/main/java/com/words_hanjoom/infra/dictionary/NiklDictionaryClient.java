@@ -12,6 +12,8 @@ public interface NiklDictionaryClient {
     Mono<SearchResponse> search(SearchRequest req);
     Mono<ViewResponse> view(long targetCode);
 
+    Mono<DictEntry> enrichFromView(DictEntry base);
+
     // 단어 1개에 대한 빠른 조회 및 정제
     Mono<DictEntry> quickLookup(String q);
 
