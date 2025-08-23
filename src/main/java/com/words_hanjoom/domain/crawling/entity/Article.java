@@ -42,8 +42,7 @@ public class Article {
     @Column(name = "deleted_at", nullable = true)
     private LocalDateTime deletedAt;    // 삭제시각(소프트 삭제용) - null이면 유효
 
-    public Article() {
-    }
+    public Article() {}
 
     @Builder
     public Article(Long articleId, Long categoryId, String title, String content,

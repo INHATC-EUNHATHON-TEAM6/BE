@@ -40,6 +40,7 @@ public class LoginService {
         // Authentication 객체를 사용하여 유저 정보를 관리하려고 하기 때문에 해당 객체를 생성해야 함
         Authentication authentication = new UsernamePasswordAuthenticationToken(loginUser.getLoginId(), null, Collections.emptyList());
         String token = tokenProvider.createToken(authentication);
+        System.out.println("Generated Token: " + token); // 디버그용 출력
         return new LoginUserResponseDto(token);
     }
 }
