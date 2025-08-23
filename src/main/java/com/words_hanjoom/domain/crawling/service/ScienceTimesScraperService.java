@@ -71,8 +71,9 @@ public class ScienceTimesScraperService implements IScraperService, IPageCounter
                     System.err.printf("기사 링크 크롤링 실패: %s, 오류: %s\n", paginatedUrl, e.getMessage());
                 }
 
-                savedCount += scNewsCrawlService.newsCrawl(allArticleLinks);
-                allArticleLinks.clear(); // 크롤링 후 링크 초기화
+                    // 10페이지마다 크롤링 진행 상황 출력
+                    savedCount += scNewsCrawlService.newsCrawl(allArticleLinks);
+                    allArticleLinks.clear(); // 크롤링 후 링크 초기화
             }
 
             try {

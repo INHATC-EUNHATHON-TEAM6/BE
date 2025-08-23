@@ -21,7 +21,8 @@ import java.util.Date;
 @RequiredArgsConstructor
 
 // JWT 토큰 생성, 검증, 파싱, 인증객체로 변환하는 로직
-public class TokenProvider {
+public class
+TokenProvider {
 
     protected SecretKey key;
 

@@ -13,6 +13,6 @@ public class SchedulerTest {
 
     @Test
     public void testScheduler() {
-        crawlScheduler.runHourly();
+        crawlScheduler.runScheduler();
     }
 }

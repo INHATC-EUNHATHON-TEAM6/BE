@@ -74,8 +74,10 @@ public class HankyungScraperService implements IScraperService, IPageCounter, IS
                     System.err.printf("기사 링크 크롤링 실패: %s, 오류: %s\n", paginatedUrl, e.getMessage());
                 }
 
-                savedCount += hkNewsCrawlService.newsCrawl(allArticleLinks);
-                allArticleLinks.clear(); // 크롤링 후 링크 초기화
+                    // 10페이지마다 크롤링 진행 상황 출력
+                    savedCount += hkNewsCrawlService.newsCrawl(allArticleLinks);
+                    allArticleLinks.clear(); // 크롤링 후 링크 초기화
+
             }
 
             try {
