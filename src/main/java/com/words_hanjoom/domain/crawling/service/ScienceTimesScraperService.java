@@ -63,21 +63,18 @@ public class ScienceTimesScraperService implements IScraperService, IPageCounter
                     break;
                 }
 
-                System.out.printf("크롤링 시작: %s, 페이지: %d\n", paginatedUrl, pageNo);
-
                 try {
                     allArticleLinks.addAll(subCategoryCrawl(paginatedUrl, fieldName));
                 } catch (IOException e) {
                     System.err.printf("기사 링크 크롤링 실패: %s, 오류: %s\n", paginatedUrl, e.getMessage());
                 }
 
-                    // 10페이지마다 크롤링 진행 상황 출력
-                    savedCount += scNewsCrawlService.newsCrawl(allArticleLinks);
-                    allArticleLinks.clear(); // 크롤링 후 링크 초기화
+                savedCount += scNewsCrawlService.newsCrawl(allArticleLinks);
+                allArticleLinks.clear(); // 크롤링 후 링크 초기화
             }
 
             try {
-                savedCount = scNewsCrawlService.newsCrawl(allArticleLinks);
+                savedCount += scNewsCrawlService.newsCrawl(allArticleLinks);
             } catch (IOException e) {
                 e.printStackTrace();
             }
