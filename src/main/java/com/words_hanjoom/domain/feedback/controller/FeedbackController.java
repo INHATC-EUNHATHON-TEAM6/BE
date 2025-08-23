@@ -1,6 +1,7 @@
 package com.words_hanjoom.domain.feedback.controller;
 
 import com.words_hanjoom.domain.feedback.dto.request.ScrapActivityDto;
+import com.words_hanjoom.domain.feedback.dto.response.FeedbackListDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbackThisMonthActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.service.FeedbackService;
@@ -27,51 +28,39 @@ public class FeedbackController {
     }
 
     @GetMapping("/list")
-    public ResponseEntity<?> getUserFeedbackList(
+    public ResponseEntity<FeedbackListDto> getUserFeedbackList(
             @RequestParam("year") int year,
             @RequestParam("month") int month,
             @RequestParam("day") int day
     ) {
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth instanceof UsernamePasswordAuthenticationToken customAuth) {
-                String loginId = customAuth.getName();
-                System.out.println("/api/feedback/{articleId} API 요청 유저 이메일: " + loginId);
-            }
-            Map<String, List<FeedbackThisMonthActivityDto>> result = feedbackService.getUserActivitiesThisMonth(auth.getName(), year, month, day);
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(e.getMessage());
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth instanceof UsernamePasswordAuthenticationToken customAuth) {
+            String loginId = customAuth.getName();
+            System.out.println("/api/feedback/{articleId} API 요청 유저 이메일: " + loginId);
         }
+        FeedbackListDto result = feedbackService.getUserActivitiesThisMonth(auth.getName(), year, month, day);
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/{articleId}")
-    public ResponseEntity<?> getFeedback(@PathVariable("articleId") long articleId) {
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth instanceof UsernamePasswordAuthenticationToken customAuth) {
-                String loginId = customAuth.getName();
-                System.out.println("/api/feedback/{articleId} API 요청 유저 이메일: " + loginId);
-            }
-            FeedbacksDto result = feedbackService.getScrapActivityRecord(auth.getName(), articleId);
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(e.getMessage());
+    public ResponseEntity<FeedbacksDto> getFeedback(@PathVariable("articleId") long articleId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth instanceof UsernamePasswordAuthenticationToken customAuth) {
+            String loginId = customAuth.getName();
+            System.out.println("/api/feedback/{articleId} API 요청 유저 이메일: " + loginId);
         }
+        FeedbacksDto result = feedbackService.getScrapActivityRecord(auth.getName(), articleId);
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping
-    public ResponseEntity<?> feedback(@RequestBody ScrapActivityDto activity) {
-        try {
-            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-            if (auth instanceof UsernamePasswordAuthenticationToken customAuth) {
-                String loginId = customAuth.getName();
-                System.out.println("/api/feedback/{articleId} API 요청 유저 이메일: " + loginId);
-            }
-            FeedbacksDto result = feedbackService.feedbackScrapActivity(auth.getName(), activity);
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("서버가 잘못했습니다.");
+    public ResponseEntity<FeedbacksDto> feedback(@RequestBody ScrapActivityDto activity) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth instanceof UsernamePasswordAuthenticationToken customAuth) {
+            String loginId = customAuth.getName();
+            System.out.println("/api/feedback/{articleId} API 요청 유저 이메일: " + loginId);
         }
+        FeedbacksDto result = feedbackService.feedbackScrapActivity(auth.getName(), activity);
+        return ResponseEntity.ok(result);
     }
 }
