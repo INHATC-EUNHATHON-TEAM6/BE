@@ -96,7 +96,7 @@ public class UnknownWordService {
     }
 
     // 맥락 기반 DB → NIKL → AI 순차 폴백
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional
     public Optional<SavedWord> saveOne(Long userId, String raw, String context) {
         if (raw == null || raw.isBlank()) return Optional.empty();
 
@@ -644,6 +644,15 @@ public class UnknownWordService {
                 .filter(s -> !s.isBlank())
                 .distinct()
                 .collect(Collectors.joining(", "));
+    }
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Result saveAllInNewTx(Long userId, List<String> tokens, String context) {
+        return saveAll(userId, tokens, context);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void importUnknownWordsInNewTx(Long userId, String raw, String context) {
+        importUnknownWords(userId, raw, context);
     }
 
     private String normalizeKo(String s) {
