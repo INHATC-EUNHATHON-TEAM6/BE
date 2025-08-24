@@ -87,13 +87,25 @@ public class UnknownWordService {
 
     @Transactional
     public Result saveAll(Long userId, List<String> tokens, String context) {
-        Wordbook wordbook = wordbookRepository.ensureWordbook(userId);
+        Wordbook wb = wordbookRepository.ensureWordbook(userId);
         List<SavedWord> saved = new ArrayList<>();
         for (String raw : tokens) {
-            saveOne(userId, raw, context).ifPresent(saved::add);
+            try {
+                saveOneInNewTx(userId, raw, context).ifPresent(saved::add);
+            } catch (Exception ex) {
+                log.warn("[WORD] save failed for '{}': {}", raw, ex.toString());
+                em.clear(); // ← 세션 정리 (전염 방지)
+            }
         }
-        return new Result(wordbook.getWordbookId(), saved);
+        return new Result(wb.getWordbookId(), saved);
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public Optional<SavedWord> saveOneInNewTx(Long userId, String raw, String context) {
+        return saveOne(userId, raw, context);
+    }
+
+    private static boolean isBlank(String s) { return s == null || s.isBlank(); }
 
     // 맥락 기반 DB → NIKL → AI 순차 폴백
     @Transactional
@@ -340,11 +352,13 @@ public class UnknownWordService {
     private Word saveResolvedEntry(Long userId, String surface, DictEntry e) {
         final Byte shoulderSafe = Optional.ofNullable(e.getShoulderNo()).orElse((byte) 0);
         final Long tc = Optional.ofNullable(e.getTargetCode()).orElse(0L);
-        final Integer sn = e.getSenseNo();
-        final int senseSafe = (sn != null) ? sn : 0; // null일 경우 0으로 안전하게 변환
+        final int inSense = Optional.ofNullable(e.getSenseNo()).orElse(0);
+        final boolean isAi = Objects.equals(tc, 0L);
 
-        // (target_code, sense_no)로만 존재 여부 판단
-        Optional<Word> opt = wordRepository.findByTargetCodeAndSenseNo(e.getTargetCode(), senseSafe);
+
+        // ❗ AI(tc=0)는 무조건 신규 저장으로 내려가게 만든다
+        Optional<Word> opt = isAi ? Optional.empty()
+                : wordRepository.findByTargetCodeAndSenseNo(tc, inSense);
 
         Word saved;
         if (opt.isPresent()) {
@@ -352,39 +366,46 @@ public class UnknownWordService {
             Word w = opt.get();
             boolean dirty = false;
 
-            if ((w.getDefinition() == null || w.getDefinition().isBlank()) && e.getDefinition() != null) {
-                w.setDefinition(e.getDefinition()); dirty = true;
-            }
-            if ((w.getExample() == null || w.getExample().isBlank()) && e.getExample() != null) {
-                w.setExample(e.getExample()); dirty = true;
-            }
-            if ((w.getWordCategory() == null || w.getWordCategory().isBlank()) && e.getCategories() != null) {
-                w.setWordCategory(e.getCategories()); dirty = true;
-            }
+            if (isBlank(w.getDefinition()) && !isBlank(e.getDefinition())) { w.setDefinition(e.getDefinition()); dirty = true; }
+            if (isBlank(w.getExample()) && !isBlank(e.getExample()))       { w.setExample(e.getExample());     dirty = true; }
+            if (isBlank(w.getWordCategory()) && !isBlank(e.getCategories())){ w.setWordCategory(e.getCategories()); dirty = true; }
+            if (w.getShoulderNo()==0 && shoulderSafe!=0) { w.setShoulderNo(shoulderSafe); dirty = true; }
 
             String mergedSyn = mergeCsv(w.getSynonym(), e.getSynonyms());
-            if (!Objects.equals(nzCsv(w.getSynonym()), mergedSyn)) {
-                w.setSynonym(mergedSyn); dirty = true;
-            }
+            if (!Objects.equals(nzCsv(w.getSynonym()), mergedSyn)) { w.setSynonym(mergedSyn); dirty = true; }
             String mergedAnt = mergeCsv(w.getAntonym(), e.getAntonyms());
-            if (!Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) {
-                w.setAntonym(mergedAnt); dirty = true;
-            }
-
+            if (!Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) { w.setAntonym(mergedAnt); dirty = true; }
 
             saved = dirty ? wordRepository.saveAndFlush(w) : w;
         } else {
             // 새 뜻은 절대 기존 row 재사용/수정하지 말고 "신규 row" 생성
             Word w = new Word();
             w.setWordName(surface);
-            w.setTargetCode(e.getTargetCode());
-            w.setSenseNo(senseSafe);
-            w.setWordCategory(Objects.toString(e.getCategories(), ""));
+            w.setTargetCode(tc);
+
+            int senseNo = inSense;
+            if (isAi && senseNo == 0) senseNo = allocateGlobalAiSenseNo(); // @Transactional(MANDATORY)
+            w.setSenseNo(senseNo);
+
+            w.setWordCategory(Objects.toString(e.getCategories(), "")); // NOT NULL 대비
             w.setDefinition(Objects.toString(e.getDefinition(), ""));
             w.setExample(Objects.toString(e.getExample(), ""));
+            w.setShoulderNo(shoulderSafe);
             w.setSynonym(joinList(e.getSynonyms()));
             w.setAntonym(joinList(e.getAntonyms()));
-            saved = saveNewWordWithRetry(w, tc);
+
+            int tries = 0;
+            while (true) {
+                try {
+                    saved = wordRepository.saveAndFlush(w);
+                    break;
+                } catch (DataIntegrityViolationException ex) {
+                    if (!isAi || ++tries > 3 || !isUqTargetSenseDup(ex)) throw ex;
+                    // sense_no 충돌 → 새 번호로 재시도
+                    w.setSenseNo(allocateGlobalAiSenseNo());
+                    log.warn("[WORD] AI sense_no dup → retry {} with {}", tries, w.getSenseNo());
+                }
+            }
         }
 
         mapIntoWordbook(userId, saved.getWordId());
