@@ -417,13 +417,16 @@ public class AiDictionaryClientImpl implements AiDictionaryClient {
         );
 
         String user = """
-    아래 후보 뜻이 **주어진 문맥**과 의미적으로 일치하는지 평가하세요.
-    - 표제어: %s
-    - 문맥(부분): %s
-    - 후보(JSON): %s
-
-    반드시 다음 **JSON**만 반환:
-    {"fit": true|false, "confidence": 0..1}
+        "표제어: "%s"
+        아래 기사 **문맥의 전체적인 주제**와 **주변 단어들**을 종합적으로 고려하여, 가장 의미적으로 부합하는 단어의 뜻을 후보 목록에서 고르세요. 특히, **문맥에 나타난 동사, 명사 등의 연관성**에 집중하세요. 예를 들어 '장'이 '소화기관'을 의미하는 문맥에는 '소화', '건강', '세균' 같은 단어가 포함될 수 있습니다.
+        
+        맥락:
+        %s
+        
+        후보들:
+        %s
+        
+        최종적으로 가장 적합한 **하나**의 후보를 선택하세요.
     """.formatted(surface, clip(context, 1400), toJson(objectMapper, cand));
 
         return callChatJson(system, user)
@@ -464,13 +467,16 @@ public class AiDictionaryClientImpl implements AiDictionaryClient {
         }
 
         final String user = """
-        아래 후보 의미들 중 기사 **맥락**과 가장 잘 맞는 **한 개**의 index를 고르세요.
-        - 표제어: %s
-        - 맥락(앞부분만): %s
-        - 후보들(JSON): %s
-
-        반드시 다음 **JSON 객체만** 반환하세요:
-        {"choice": <정수 인덱스>, "confidence": <0..1>}
+        "표제어: "%s"
+        아래 기사 **문맥의 전체적인 주제**와 **주변 단어들**을 종합적으로 고려하여, 가장 의미적으로 부합하는 단어의 뜻을 후보 목록에서 고르세요. 특히, **문맥에 나타난 동사, 명사 등의 연관성**에 집중하세요. 예를 들어 '장'이 '소화기관'을 의미하는 문맥에는 '소화', '건강', '세균' 같은 단어가 포함될 수 있습니다.
+        
+        맥락:
+        %s
+        
+        후보들:
+        %s
+        
+        최종적으로 가장 적합한 **하나**의 후보를 선택하세요.
         """.formatted(surface, clip(context, 1400), toJson(objectMapper, cands));
 
         final String system = "You are a strict disambiguation engine. Respond ONLY with a JSON object.";
@@ -584,13 +590,19 @@ public class AiDictionaryClientImpl implements AiDictionaryClient {
                 "senseNo", c.getSenseNo()
         );
         String user = """
-                한국어 기사 **맥락**과 아래 후보 뜻이 잘 맞는지 판단하세요.
-                - 표제어: %s
-                - 맥락(앞부분): %s
-                - 후보(JSON): %s
-                
-                다음 **JSON만** 반환하세요:
-                {"fit": true | false, "confidence": 0..1}
+        "표제어: "%s"
+        아래 후보 뜻과 **주어진 기사 문맥**의 **주제 및 내용**이 의미적으로 일치하는지 **'예', '아니오'**로 판단하세요.
+        
+        - 후보 뜻:
+          - 정의: %s
+          - 예문: %s
+          - 분야: %s
+        
+        - 문맥:
+        %s
+        
+        다음 JSON만 반환하세요:
+        {"fit": true | false, "confidence": 0..1}
                 """.formatted(surface, clip(context, 1400), toJson(objectMapper, cand));
 
         return callChatJson(system, user)

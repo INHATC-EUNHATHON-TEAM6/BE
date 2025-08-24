@@ -5,8 +5,10 @@ import com.words_hanjoom.domain.wordbooks.dto.request.WordbookDeletionRequest;
 import com.words_hanjoom.domain.wordbooks.dto.response.WordItemDto;
 import com.words_hanjoom.domain.wordbooks.service.WordbookWordService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -26,6 +28,7 @@ public class WordbookController {
     private final WordbookWordService wordbookWordService;
     private final UserRepository userRepository;
 
+    @SecurityRequirement(name = "bearerAuth")
     @Operation(summary = "사용자별 단어장에 저장된 단어 반환")
     @GetMapping //
     public Page<WordItemDto> getMyWordbook(
