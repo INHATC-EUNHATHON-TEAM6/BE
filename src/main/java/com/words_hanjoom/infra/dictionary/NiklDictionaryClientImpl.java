@@ -138,6 +138,8 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     }
 
     private DictEntry buildEntry(String lemma, String def, String ex, Integer sn, String cats, long targetCd, int supNo) {
+        int finalSenseNo = (sn != null) ? sn : 0;
+
         return DictEntry.builder()
                 .lemma(nz(lemma))
                 .definition(nz(def))
@@ -290,22 +292,25 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
     public Mono<ViewResponse> view(long targetCode) {
         if (targetCode <= 0) return Mono.empty();
 
+        // 1) 공식 라우트: API 문서에 따르면 'method=target_code'와 'target_code' 사용
         Mono<String> primary = dicWebClient.get()
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
-                        .queryParam("method", "target_code")     // 공식 라우트
+                        .queryParam("method", "target_code")
                         .queryParam("target_code", targetCode)
                         .build())
                 .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(String.class);
 
+        // 2) 폴백 라우트: API 문서에 따르면 'type_search=view', 'method=TARGET_CODE', 'q' 사용
+        // 공식 라우트와 파라미터 이름 및 값이 다름.
         Mono<String> fallback = dicWebClient.get()
                 .uri(b -> b.path("/view.do")
                         .queryParam("key", apiKey)
                         .queryParam("req_type", "json")
-                        .queryParam("type_search", "view")       // 폴백 라우트
+                        .queryParam("type_search", "view")
                         .queryParam("method", "TARGET_CODE")
                         .queryParam("q", targetCode)
                         .build())
@@ -314,7 +319,10 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                 .bodyToMono(String.class);
 
         return primary
-                .onErrorResume(e -> fallback)                // HTTP 에러면 폴백
+                .onErrorResume(e -> {
+                    log.warn("[DICT] Primary view.do call failed, falling back. tc={}", targetCode, e);
+                    return fallback;
+                })
                 .flatMap(body -> {
                     try {
                         ViewResponse vr = read(body, ViewResponse.class);
@@ -325,10 +333,16 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                                 && !vr.getChannel().getItem().isEmpty();
                         if (hasItem) return Mono.just(vr);
                     } catch (Exception ignore) {
-                        // 파싱 실패 시 폴백으로
+                        log.warn("[DICT] Failed to parse primary view body, falling back. tc={}", targetCode, ignore);
                     }
+                    // 파싱 실패 시 폴백으로
                     return fallback.map(b -> read(b, ViewResponse.class));
-                });
+                })
+                .onErrorResume(e -> {
+                    log.error("[DICT] Both view.do calls failed for tc={}", targetCode, e);
+                    return Mono.empty();
+                })
+                .defaultIfEmpty(null);
     }
 
     @Override

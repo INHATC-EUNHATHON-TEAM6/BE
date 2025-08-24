@@ -339,7 +339,9 @@ public class UnknownWordService {
     // ===== “선택된 뜻”을 저장(기존 병합 로직 재사용) =====
     private Word saveResolvedEntry(Long userId, String surface, DictEntry e) {
         final Byte shoulderSafe = Optional.ofNullable(e.getShoulderNo()).orElse((byte) 0);
-        final Integer senseSafe = e.getSenseNo();
+        final Long tc = Optional.ofNullable(e.getTargetCode()).orElse(0L);
+        final Integer sn = e.getSenseNo();
+        final int senseSafe = (sn != null) ? sn : 0; // null일 경우 0으로 안전하게 변환
 
         // (target_code, sense_no)로만 존재 여부 판단
         Optional<Word> opt = wordRepository.findByTargetCodeAndSenseNo(e.getTargetCode(), senseSafe);
@@ -359,7 +361,16 @@ public class UnknownWordService {
             if ((w.getWordCategory() == null || w.getWordCategory().isBlank()) && e.getCategories() != null) {
                 w.setWordCategory(e.getCategories()); dirty = true;
             }
-            // syn/ant 병합 로직이 있으면 여기서만
+
+            String mergedSyn = mergeCsv(w.getSynonym(), e.getSynonyms());
+            if (!Objects.equals(nzCsv(w.getSynonym()), mergedSyn)) {
+                w.setSynonym(mergedSyn); dirty = true;
+            }
+            String mergedAnt = mergeCsv(w.getAntonym(), e.getAntonyms());
+            if (!Objects.equals(nzCsv(w.getAntonym()), mergedAnt)) {
+                w.setAntonym(mergedAnt); dirty = true;
+            }
+
 
             saved = dirty ? wordRepository.saveAndFlush(w) : w;
         } else {
@@ -371,8 +382,9 @@ public class UnknownWordService {
             w.setWordCategory(Objects.toString(e.getCategories(), ""));
             w.setDefinition(Objects.toString(e.getDefinition(), ""));
             w.setExample(Objects.toString(e.getExample(), ""));
-            // syn/ant 세팅도 여기에
-            saved = wordRepository.saveAndFlush(w);
+            w.setSynonym(joinList(e.getSynonyms()));
+            w.setAntonym(joinList(e.getAntonyms()));
+            saved = saveNewWordWithRetry(w, tc);
         }
 
         mapIntoWordbook(userId, saved.getWordId());
@@ -392,15 +404,22 @@ public class UnknownWordService {
 
     /** 신규 Word 저장 시, AI 전역 유니크 충돌에 대해 짧게 재시도 */
     private Word saveNewWordWithRetry(Word candidate, Long targetCode) {
-        if (!Objects.equals(targetCode, 0L)) {
-            // 기존: return wordRepository.save(candidate);
-            return wordRepository.saveAndFlush(candidate); // ★ flush로 PK 확보
+        if (candidate.getSenseNo() == null) {
+            candidate.setSenseNo(0);
         }
+
+        if (!Objects.equals(targetCode, 0L)) {
+            // NIKL 등 AI가 아닌 단어는 바로 저장. 이제 senseNo가 null이 아니므로 안전.
+            return wordRepository.saveAndFlush(candidate);
+        }
+
+        // 이 아래는 AI 단어(target_code=0)에 대한 충돌 처리 로직
         for (int attempt = 1; attempt <= AI_SAVE_RETRIES; attempt++) {
             try {
-                return wordRepository.saveAndFlush(candidate); // ★
+                return wordRepository.saveAndFlush(candidate);
             } catch (DataIntegrityViolationException e) {
                 if (isUqTargetSenseDup(e)) {
+                    // AI 단어의 sense_no 중복 시에만 새 번호 할당
                     int next = allocateGlobalAiSenseNo();
                     candidate.setSenseNo(next);
                     log.warn("[WORD] AI sense_no dup → retry {}/{} with sense_no={}", attempt, AI_SAVE_RETRIES, next);
@@ -409,7 +428,7 @@ public class UnknownWordService {
                 throw e;
             }
         }
-        return wordRepository.saveAndFlush(candidate); // ★
+        return wordRepository.saveAndFlush(candidate);
     }
 
     private boolean isUqTargetSenseDup(Throwable e) {
