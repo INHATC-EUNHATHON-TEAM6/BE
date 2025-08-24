@@ -1,5 +1,7 @@
 package com.words_hanjoom.domain.wordbooks.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.words_hanjoom.domain.users.entity.User;
 import com.words_hanjoom.domain.wordbooks.dto.ai.SenseCandidate;
 import com.words_hanjoom.domain.wordbooks.dto.response.AiPickResult;
 import com.words_hanjoom.domain.wordbooks.dto.response.DictEntry;
@@ -8,6 +10,8 @@ import com.words_hanjoom.domain.wordbooks.entity.*;
 import com.words_hanjoom.domain.wordbooks.repository.*;
 import com.words_hanjoom.infra.dictionary.AiDictionaryClient;
 import com.words_hanjoom.infra.dictionary.NiklDictionaryClient;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -44,9 +48,9 @@ public class UnknownWordService {
     private static final int MIN_SCORE = 3;       // 이 미만이면 맥락 부적합
     private static final int MARGIN_TO_NEXT = 2;  // 1,2위 점수차 작으면 보류
 
+    @PersistenceContext
+    private EntityManager em;
 
-
-    // ====== 엔드포인트 ======
 
     // 기존(맥락 없음) — 하위 호환 유지
     @Transactional
@@ -83,7 +87,7 @@ public class UnknownWordService {
 
     @Transactional
     public Result saveAll(Long userId, List<String> tokens, String context) {
-        Wordbook wordbook = wordbookRepository.getOrCreateEntity(userId);
+        Wordbook wordbook = wordbookRepository.ensureWordbook(userId);
         List<SavedWord> saved = new ArrayList<>();
         for (String raw : tokens) {
             saveOne(userId, raw, context).ifPresent(saved::add);
@@ -477,10 +481,15 @@ public class UnknownWordService {
     }
 
     private void mapIntoWordbook(Long userId, Long wordId) {
-        Wordbook wb = wordbookRepository.getOrCreateEntity(userId);
-        WordbookWordId id = new WordbookWordId(wb.getWordbookId(), wordId);
-        if (!wordbookWordRepository.existsById(id)) {
-            wordbookWordRepository.save(WordbookWord.builder().id(id).build());
+        log.info("[MAP] userId={}, wordId={}", userId, wordId);   // ← 여기!
+
+        Wordbook wb = wordbookRepository.ensureWordbook(userId);
+        int affected = wordbookWordRepository.insertIgnore(wb.getWordbookId(), wordId);
+
+        if (affected == 0) {
+            log.debug("[MAP] already mapped (wbId={}, wordId={})", wb.getWordbookId(), wordId);
+        } else {
+            log.info("[MAP] mapped (wbId={}, wordId={})", wb.getWordbookId(), wordId);
         }
     }
 

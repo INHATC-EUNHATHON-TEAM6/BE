@@ -44,6 +44,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
                         u.startsWith("/api/words") ||
                         u.startsWith("/api/scraps") ||
                         u.startsWith("/api/feedback") ||
+                        u.startsWith("/api/wordbook") ||
                         u.equals("/test"));
     }
 
