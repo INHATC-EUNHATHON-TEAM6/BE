@@ -13,11 +13,10 @@ import java.util.Optional;
 @Repository
 public interface WordRepository extends JpaRepository<Word, Long> {
 
-    // 동일 표기 단건
-    Optional<Word> findByWordName(String wordName);
-
     // 동일 표기 전부
     List<Word> findAllByWordName(String wordName);
+
+    Optional<Word> findByTargetCodeAndSenseNo(Long targetCode, Integer senseNo);
 
     // 단건 느슨한 매칭
     @Query(value = """

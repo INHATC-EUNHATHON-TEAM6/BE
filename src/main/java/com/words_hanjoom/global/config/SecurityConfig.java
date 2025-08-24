@@ -48,6 +48,7 @@ public class SecurityConfig {
                                 // Auth & API (공개)
                                 "/api/auth/**",
                                 "/api/wordbooks/dict/**",
+                                "/api/wordbook/**",
                                 "/api/words/**",
                                 "/api/scraps/**",
                                 "/api/feedback/**",
@@ -63,6 +64,7 @@ public class SecurityConfig {
                                 "/swagger-resources/**",
                                 "/webjars/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/wordbook").authenticated()
                         .anyRequest().authenticated()
                 )
                 // JWT 인증 필터

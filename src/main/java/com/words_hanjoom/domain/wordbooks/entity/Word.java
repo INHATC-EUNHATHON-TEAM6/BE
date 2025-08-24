@@ -7,7 +7,19 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "words", uniqueConstraints = @UniqueConstraint(name = "uq_words_target_sense", columnNames = {"target_code", "sense_no"}))
+@Table(
+        name = "words",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uq_words_target_sense",
+                        columnNames = {"target_code", "sense_no"}
+                )
+        },
+        indexes = {
+                @Index(name = "idx_words_word_name", columnList = "word_name"),
+                @Index(name = "idx_words_target_sense", columnList = "target_code, sense_no")
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -41,8 +53,8 @@ public class Word {
     @Column(name = "word_category", length = 30, nullable = false)
     private String wordCategory;
 
-    @Column(name = "shoulder_no", nullable = false)
-    private Byte shoulderNo;
+    @Column(name="shoulder_no", nullable=false)
+    private Byte shoulderNo = 0;
 
     @Lob
     @Column(name = "example", columnDefinition = "TEXT", nullable = false)
@@ -54,4 +66,5 @@ public class Word {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
 }

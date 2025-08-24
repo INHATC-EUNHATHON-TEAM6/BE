@@ -49,12 +49,12 @@ public class ViewResponse {
         private String type;      // (예: 일반어 등 – 써도 되고 안 써도 됨)
         private String origin;
 
-        // ✅ cat_info: [{ "cat": "심리" }, ...]
+        // cat_info: [{ "cat": "심리" }, ...]
         @JsonProperty("cat_info")
         @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
         private List<CatInfo> catInfo;
 
-        // ✅ 유/반의어(선택) – DTO에서도 보고 싶을 때
+        // 유/반의어(선택) – DTO에서도 보고 싶을 때
         @JsonProperty("lexical_info")
         @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
         private List<Lexical> lexicalInfo;

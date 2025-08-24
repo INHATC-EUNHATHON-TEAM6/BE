@@ -1,12 +1,16 @@
 package com.words_hanjoom.global.security;
 
+import com.words_hanjoom.domain.users.entity.User;
+import com.words_hanjoom.domain.users.repository.UserRepository;
 import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -15,6 +19,7 @@ import io.jsonwebtoken.Claims;
 
 import java.util.Collections;
 import java.util.Date;
+import java.util.stream.Collectors;
 
 @Log4j2
 @Component
@@ -28,6 +33,8 @@ TokenProvider {
 
     @Value("${jwt.secret}")
     private String secret;
+
+    private final UserRepository userRepository;
 
     // key 객체를 JWT 서명용 비밀키로 설정
     @PostConstruct
@@ -46,14 +53,31 @@ TokenProvider {
     // 토큰 생성
     public String createToken(Authentication authentication) {
         long now = System.currentTimeMillis();
-        long validity = 1000L * 60 * 60; // 1시간 유효
-        String loginId = authentication.getName();
+        Date iat = new Date(now);
+        Date exp = new Date(now + 1000L * 60 * 60); // 1시간
+
+        String loginId = authentication.getName(); // 보통 username(로그인ID)
+        // 1) userId 구하기 (둘 중 하나 선택)
+
+        // (A) DB에서 찾기
+        Long userId = userRepository.findIdByLoginId(loginId)
+                .orElseThrow(() -> new IllegalArgumentException("user not found: " + loginId));
+
+        // (B) 커스텀 Principal 사용 시
+        // Long userId = ((UserPrincipal) authentication.getPrincipal()).getUserId();
+
+        // 권한을 claim에 싣고 싶다면 (선택)
+        String auth = authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .collect(Collectors.joining(","));
 
         return Jwts.builder()
-                .setSubject(loginId)
-                .setIssuedAt(new Date(now))
-                .setExpiration(new Date(now + validity))
-                .signWith(key)
+                .setSubject(loginId)              // subject = 로그인ID
+                .claim("user_id", userId)         // ✅ 올바른 claim: 이름과 값
+                .claim("auth", auth)              // 선택
+                .setIssuedAt(iat)
+                .setExpiration(exp)
+                .signWith(key, SignatureAlgorithm.HS512) // 키/알고리즘 일치
                 .compact();
     }
 
