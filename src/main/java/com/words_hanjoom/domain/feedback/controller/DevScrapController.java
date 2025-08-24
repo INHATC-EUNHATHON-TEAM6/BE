@@ -7,6 +7,8 @@ import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.service.FeedbackService;
 import com.words_hanjoom.domain.users.entity.User;
 import com.words_hanjoom.domain.users.repository.UserRepository;
+import io.swagger.v3.oas.annotations.Hidden;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,6 +20,7 @@ public class DevScrapController {
     private final FeedbackService feedbackService;
     private final UserRepository userRepository;
 
+    @Operation(summary = "스크랩활동 테이블 > 단어 저장 로직 테스트용(백엔드용)")
     // 헤더로 user_id(pk) 받기
     @PostMapping("/scrap-activities")
     public FeedbacksDto save(@RequestHeader("X-User-Id") Long userId,

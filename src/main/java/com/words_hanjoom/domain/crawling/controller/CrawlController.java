@@ -4,6 +4,7 @@ import com.words_hanjoom.domain.crawling.dto.response.CrawlResult;
 import com.words_hanjoom.domain.crawling.scheduler.CrawlScheduler;
 import com.words_hanjoom.domain.crawling.service.HankyungScraperService;
 import com.words_hanjoom.domain.crawling.service.ScienceTimesScraperService;
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +26,7 @@ public class CrawlController {
     private final HankyungScraperService hankyungScraperService;
     private final ScienceTimesScraperService scienceTimesScraperService;
 
+    @Hidden
     @Operation(summary = "스케줄링(모든 기사) 크롤링")
     @GetMapping("/all-news")
     public ResponseEntity<String> scrapeAllNews() {
@@ -32,6 +34,7 @@ public class CrawlController {
             return ResponseEntity.ok("모든 뉴스 크롤링 작업이 성공적으로 완료되었습니다.");
     }
 
+    @Hidden
     @Operation(summary = "사이언스타임즈 크롤링")
     @GetMapping("/sciencetimes/{category}")
     public ResponseEntity<String> scrapeScienceTimes(@PathVariable String category) {
@@ -48,6 +51,7 @@ public class CrawlController {
         }
     }
 
+    @Hidden
     @Operation(summary = "한국경제 크롤링")
     @GetMapping("/hankyung/{category}")
     public ResponseEntity<String> scrapeHankyung(@PathVariable String category) {
