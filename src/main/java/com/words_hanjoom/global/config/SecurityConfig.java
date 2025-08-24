@@ -42,7 +42,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
-                        // ✅ 프리플라이트를 보안필터에서 막지 않도록 전역 허용
+                        // 프리플라이트를 보안필터에서 막지 않도록 전역 허용
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 // Auth & API (공개)

@@ -376,7 +376,7 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
                         JsonNode root = objectMapper.readTree(body);
                         JsonNode itemsNode = root.path("channel").path("item");
 
-                        // ✅ 단건/배열 모두 수용
+                        // 단건/배열 모두 수용
                         List<JsonNode> items = asList(itemsNode);
 
                         String itemKind = itemsNode.isArray() ? "array(" + items.size() + ")"
@@ -490,15 +490,15 @@ public class NiklDictionaryClientImpl implements NiklDictionaryClient {
             JsonNode items = root.path("channel").path("item");
             if (isMissing(items)) return Mono.empty();
 
-            // ✅ 1) 배열이면 target_code로 정확히 매칭, 없으면 첫 번째
+            // 1) 배열이면 target_code로 정확히 매칭, 없으면 첫 번째
             JsonNode chosen = items.isArray() ? findByTargetCode(items, targetCode) : items;
             if (isMissing(chosen)) return Mono.empty();
 
-            // ✅ 2) sense 선택 (sense 또는 pickFirstSense 모두 지원)
+            // 2) sense 선택 (sense 또는 pickFirstSense 모두 지원)
             JsonNode senseNode = firstSenseNode(chosen);
             if (isMissing(senseNode)) return Mono.empty();
 
-            // ✅ 3) 상세정보 추출
+            // 3) 상세정보 추출
             String example = pickExampleFlexible(senseNode);
             Integer senseNo = firstSenseCode(senseNode);
             if (senseNo == null) senseNo = firstSenseCodeInItem(chosen);
