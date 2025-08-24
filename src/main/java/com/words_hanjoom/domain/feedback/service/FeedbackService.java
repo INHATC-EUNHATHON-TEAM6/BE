@@ -5,11 +5,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.words_hanjoom.domain.feedback.dto.request.ScrapActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbackDto;
+import com.words_hanjoom.domain.feedback.dto.response.FeedbackListDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbackThisMonthActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.entity.ActivityType;
 import com.words_hanjoom.domain.crawling.entity.Article;
-import com.words_hanjoom.domain.feedback.event.ScrapActivitySavedEvent;
 import com.words_hanjoom.domain.users.entity.Category;
 import com.words_hanjoom.domain.feedback.entity.ScrapActivities;
 import com.words_hanjoom.domain.feedback.repository.FeedbackRepository;
@@ -18,14 +18,13 @@ import com.words_hanjoom.domain.feedback.repository.SpringDataJpaFeedbackReposit
 import com.words_hanjoom.domain.users.entity.User;
 import com.words_hanjoom.domain.users.repository.CategoryRepository;
 import com.words_hanjoom.domain.users.repository.UserRepository;
-import org.springframework.transaction.annotation.Transactional;
+import jakarta.transaction.Transactional;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.embedding.EmbeddingResponse;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -44,9 +43,6 @@ public class FeedbackService {
     private final OpenAiChatModel chatModel;
     private final OpenAiEmbeddingModel embeddingModel;
 
-    // 이벤트 퍼블리셔
-    private final ApplicationEventPublisher eventPublisher;
-
     @Autowired
     public FeedbackService(UserRepository userRepository,
                            ArticleRepository articleRepository,
@@ -54,8 +50,7 @@ public class FeedbackService {
                            CategoryRepository categoryRepository,
                            ObjectMapper objectMapper,
                            OpenAiChatModel chatModel,
-                           OpenAiEmbeddingModel embeddingModel,
-                           ApplicationEventPublisher eventPublisher) {
+                           OpenAiEmbeddingModel embeddingModel) {
         this.userRepository = userRepository;
         this.articleRepository = articleRepository;
         this.feedbackRepository = feedbackRepository;
@@ -63,10 +58,9 @@ public class FeedbackService {
         this.objectMapper = objectMapper;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
-        this.eventPublisher = eventPublisher;
     }
 
-    public Map<String, List<FeedbackThisMonthActivityDto>> getUserActivitiesThisMonth(String loginId, int year, int month, int day) {
+    public FeedbackListDto getUserActivitiesThisMonth(String loginId, int year, int month, int day) {
         LocalDateTime startDate = LocalDateTime.of(year, month, 1, 0, 0, 0);
         LocalDateTime endDate = LocalDateTime.of(year, month, day, 23, 59, 59);
         Optional<User> optionalUser = userRepository.findByLoginId(loginId);
@@ -91,7 +85,7 @@ public class FeedbackService {
             }
             activityOfDay.get(Integer.toString(daily)).add(feedbackRecord);
         }
-        return activityOfDay;
+        return new FeedbackListDto(activityOfDay);
     }
 
     public FeedbacksDto getScrapActivityRecord(String loginId, long articleId) {
@@ -122,96 +116,92 @@ public class FeedbackService {
         return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
     }
 
-    public FeedbacksDto feedbackScrapActivity(String loginId, ScrapActivityDto activity) throws JsonProcessingException {
-        Optional<User> optionalUser = userRepository.findByLoginId(loginId);
-        User user = optionalUser.orElseThrow(
-                () -> new IllegalArgumentException("해당 유저 없음" + loginId)
-        );
-        Optional<Article> optionalArticle = articleRepository.findById(activity.getArticleId());
-        Article article = optionalArticle.orElseThrow(
-                () -> new IllegalArgumentException("해당 Article 없음")
-        );
-        List<FeedbackDto> feedbacks = new ArrayList<>();
-        Optional<Category> optionalCategory = categoryRepository.findById(article.getCategoryId());
-        Category category = optionalCategory.orElseThrow(
-                () -> new IllegalArgumentException("해당 Category 없음")
-        );
-        Map<String, Object> firstRequest = requestFeedbackByAI(
-                Map.of(
-                        "title", article.getTitle(),
-                        "category", category.getCategoryName(),
-                        "content", article.getContent()
-                ),
-                Map.of(
-                        "keywords", activity.getKeywords(),
-                        "title", activity.getTitle(),
-                        "category", activity.getCategory(),
-                        "summary", activity.getSummary()
-                ),
-                FIRST_SCRAP_FEEDBACK_SYSTEM_PROMPT,
-                FIRST_SCRAP_FEEDBACK_USER_PROMPT
-        );
-        Map<String, Object> secondRequest = requestFeedbackByAI(
-                Map.of(
-                        "title", article.getTitle(),
-                        "category", category.getCategoryName(),
-                        "content", article.getContent()
-                ),
-                Map.of(
-                        "comment", activity.getComment()
-                ),
-                SECOND_SCRAP_FEEDBACK_SYSTEM_PROMPT,
-                SECOND_SCRAP_FEEDBACK_USER_PROMPT
-        );
-        Map<String, Object> aiFeedbacks = (Map<String, Object>)firstRequest.get("feedbacks");
-        feedbacks.add(compareCategory(
-                activity.getCategory(),
-                (String)firstRequest.get("category"),
-                (String)aiFeedbacks.get("category"))
-        );
-        feedbacks.add(compareTitle(
-                activity.getTitle(),
-                (String)firstRequest.get("title"),
-                (String)aiFeedbacks.get("title"))
-        );
-        feedbacks.add(compareKeywords(
-                activity.getKeywords(),
-                (List<String>)firstRequest.get("keywords"),
-                (String)aiFeedbacks.get("keywords"))
-        );
-        feedbacks.add(getWordsToLearn(activity.getVocabularies()));
-        feedbacks.add(compareSummary(
-                activity.getSummary(),
-                (String)firstRequest.get("summary"),
-                (String)aiFeedbacks.get("summary"))
-        );
-        feedbacks.add(checkUserComment(
-                activity.getComment(),
-                (String)secondRequest.get("tendency"),
-                (String)secondRequest.get("feedback"))
-        );
-        for (FeedbackDto feedback : feedbacks) {
-            ScrapActivities scrapActivities = new ScrapActivities();
-            scrapActivities.setUserId(user.getUserId());
-            scrapActivities.setArticleId(article.getArticleId());
-            scrapActivities.setComparisonType(feedback.getActivityType());
-            scrapActivities.setUserAnswer(feedback.getUserAnswer());
-            scrapActivities.setAiAnswer(feedback.getAiAnswer());
-            scrapActivities.setAiFeedback(feedback.getAiFeedback());
-            scrapActivities.setEvaluationScore(feedback.getEvaluationScore());
-            feedbackRepository.save(scrapActivities);
-
-            // 단어 자동수집 트리거: UNKNOWN_WORD인 경우에만 이벤트 발행
-            if (scrapActivities.getComparisonType() == ActivityType.UNKNOWN_WORD) {
-                eventPublisher.publishEvent(new ScrapActivitySavedEvent(
-                        scrapActivities.getUserId(),
-                        scrapActivities.getArticleId(),
-                        scrapActivities.getComparisonType(),
-                        scrapActivities.getUserAnswer()
-                ));
+    public FeedbacksDto feedbackScrapActivity(String loginId, ScrapActivityDto activity) {
+        try {
+            Optional<User> optionalUser = userRepository.findByLoginId(loginId);
+            User user = optionalUser.orElseThrow(
+                    () -> new IllegalArgumentException("해당 유저 없음" + loginId)
+            );
+            Optional<Article> optionalArticle = articleRepository.findById(activity.getArticleId());
+            Article article = optionalArticle.orElseThrow(
+                    () -> new IllegalArgumentException("해당 Article 없음")
+            );
+            List<FeedbackDto> feedbacks = new ArrayList<>();
+            Optional<Category> optionalCategory = categoryRepository.findById(article.getCategoryId());
+            Category category = optionalCategory.orElseThrow(
+                    () -> new IllegalArgumentException("해당 Category 없음")
+            );
+            Map<String, Object> firstRequest = requestFeedbackByAI(
+                    Map.of(
+                            "title", article.getTitle(),
+                            "category", category.getCategoryName(),
+                            "content", article.getContent()
+                    ),
+                    Map.of(
+                            "keywords", activity.getKeywords(),
+                            "title", activity.getTitle(),
+                            "category", activity.getCategory(),
+                            "summary", activity.getSummary()
+                    ),
+                    FIRST_SCRAP_FEEDBACK_SYSTEM_PROMPT,
+                    FIRST_SCRAP_FEEDBACK_USER_PROMPT
+            );
+            Map<String, Object> secondRequest = requestFeedbackByAI(
+                    Map.of(
+                            "title", article.getTitle(),
+                            "category", category.getCategoryName(),
+                            "content", article.getContent()
+                    ),
+                    Map.of(
+                            "comment", activity.getComment()
+                    ),
+                    SECOND_SCRAP_FEEDBACK_SYSTEM_PROMPT,
+                    SECOND_SCRAP_FEEDBACK_USER_PROMPT
+            );
+            Map<String, Object> aiFeedbacks = (Map<String, Object>)firstRequest.get("feedbacks");
+            feedbacks.add(compareCategory(
+                    activity.getCategory(),
+                    (String)firstRequest.get("category"),
+                    (String)aiFeedbacks.get("category"))
+            );
+            feedbacks.add(compareTitle(
+                    activity.getTitle(),
+                    (String)firstRequest.get("title"),
+                    (String)aiFeedbacks.get("title"))
+            );
+            feedbacks.add(compareKeywords(
+                    activity.getKeywords(),
+                    (List<String>)firstRequest.get("keywords"),
+                    (String)aiFeedbacks.get("keywords"))
+            );
+            feedbacks.add(getWordsToLearn(activity.getVocabularies()));
+            feedbacks.add(compareSummary(
+                    activity.getSummary(),
+                    (String)firstRequest.get("summary"),
+                    (String)aiFeedbacks.get("summary"))
+            );
+            feedbacks.add(checkUserComment(
+                    activity.getComment(),
+                    (String)secondRequest.get("tendency"),
+                    (String)secondRequest.get("feedback"))
+            );
+            for (FeedbackDto feedback : feedbacks) {
+                ScrapActivities scrapActivities = new ScrapActivities();
+                scrapActivities.setUserId(user.getUserId());
+                scrapActivities.setArticleId(article.getArticleId());
+                scrapActivities.setComparisonType(feedback.getActivityType());
+                scrapActivities.setUserAnswer(feedback.getUserAnswer());
+                scrapActivities.setAiAnswer(feedback.getAiAnswer());
+                scrapActivities.setAiFeedback(feedback.getAiFeedback());
+                scrapActivities.setEvaluationScore(feedback.getEvaluationScore());
+                feedbackRepository.save(scrapActivities);
             }
+            return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
+        } catch(JsonProcessingException e) {
+            return new FeedbacksDto("", e.getMessage(), null);
+        } catch(Exception e) {
+            return new FeedbacksDto("", e.getMessage(), null);
         }
-        return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
     }
 
     private FeedbackDto compareCategory(String userCategory, String aiCategory, String aiFeedback) {
