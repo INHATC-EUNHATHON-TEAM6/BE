@@ -18,7 +18,7 @@ public interface WordbookWordRepository extends JpaRepository<WordbookWord, Word
     @Query(value = """
       select new com.words_hanjoom.domain.wordbooks.dto.response.WordItemDto(
           w.wordId, w.wordName, w.definition, w.example,
-          w.wordCategory, w.targetCode, w.senseNo, ww.createdAt
+          w.wordCategory, w.synonym, w.antonym, w.shoulderNo
       )
       from WordbookWord ww
         join ww.wordbook wb
@@ -26,7 +26,7 @@ public interface WordbookWordRepository extends JpaRepository<WordbookWord, Word
       where wb.userId = :userId
         and w.deletedAt is null
       """,
-                countQuery = """
+            countQuery = """
       select count(ww)
       from WordbookWord ww
         join ww.wordbook wb

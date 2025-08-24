@@ -5,12 +5,13 @@ import lombok.*;
 
 @Getter @AllArgsConstructor
 public class WordItemDto {
-    private Long wordId;
-    private String wordName;
-    private String definition;
-    private String example;
-    private String wordCategory;
-    private Long targetCode;
-    private Integer senseNo;
-    private LocalDateTime savedAt; // 단어장에 담긴 시각(WordbookWord.createdAt)
+    private Long wordId; // 단어Id
+    private String wordName; // 단어명
+    private String definition; // 정의
+    private String example; // 예문
+    private String wordCategory; // 분야
+    private String synonym; // 유의어
+    private String antonym; // 반의어
+    private Byte shoulderNo; // 어깨번호
 }
+
