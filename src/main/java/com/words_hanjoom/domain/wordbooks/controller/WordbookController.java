@@ -4,6 +4,7 @@ import com.words_hanjoom.domain.users.repository.UserRepository;
 import com.words_hanjoom.domain.wordbooks.dto.request.WordbookDeletionRequest;
 import com.words_hanjoom.domain.wordbooks.dto.response.WordItemDto;
 import com.words_hanjoom.domain.wordbooks.service.WordbookWordService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -25,6 +26,7 @@ public class WordbookController {
     private final WordbookWordService wordbookWordService;
     private final UserRepository userRepository;
 
+    @Operation(summary = "사용자별 단어장에 저장된 단어 반환")
     @GetMapping //
     public Page<WordItemDto> getMyWordbook(
             Authentication authentication,
@@ -41,6 +43,7 @@ public class WordbookController {
         return wordbookWordService.getMyWordbook(userId, pageable);
     }
 
+    @Operation(summary = "단어장에서 단어 삭제")
     @DeleteMapping
     public ResponseEntity<Void> deleteWordFromWordbook(
             Authentication authentication,
