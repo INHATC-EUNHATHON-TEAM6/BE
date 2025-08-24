@@ -5,6 +5,7 @@ import com.words_hanjoom.domain.feedback.dto.response.FeedbackListDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbackThisMonthActivityDto;
 import com.words_hanjoom.domain.feedback.dto.response.FeedbacksDto;
 import com.words_hanjoom.domain.feedback.service.FeedbackService;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +28,7 @@ public class FeedbackController {
         this.feedbackService = feedbackService;
     }
 
+    @Operation(summary = "월별 신문 스크랩 활동 기록 조회")
     @GetMapping("/list")
     public ResponseEntity<FeedbackListDto> getUserFeedbackList(
             @RequestParam("year") int year,
@@ -42,6 +44,7 @@ public class FeedbackController {
         return ResponseEntity.ok(result);
     }
 
+    @Operation(summary = "특정 신문 스크랩 활동 피드백 조회")
     @GetMapping("/{articleId}")
     public ResponseEntity<FeedbacksDto> getFeedback(@PathVariable("articleId") long articleId) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -53,6 +56,7 @@ public class FeedbackController {
         return ResponseEntity.ok(result);
     }
 
+    @Operation(summary = "신문 스크랩 활동 피드백 처리")
     @PostMapping
     public ResponseEntity<FeedbacksDto> feedback(@RequestBody ScrapActivityDto activity) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
