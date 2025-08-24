@@ -24,10 +24,6 @@ public class Wordbook {
     @Column(name = "user_id", nullable = false, unique = true) // 유저당 1개라면 unique=true
     private Long userId;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false)
-    private LocalDateTime createdAt;
-
     public Long getUserId() { return userId; }
 
 }

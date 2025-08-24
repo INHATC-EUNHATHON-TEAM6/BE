@@ -47,4 +47,10 @@ public interface WordbookWordRepository extends JpaRepository<WordbookWord, Word
             nativeQuery = true
     )
     int insertIgnore(@Param("wbId") Long wordbookId, @Param("wId") Long wordId);
+
+    // 단어 삭제
+    @Modifying
+    @Transactional
+    @Query("delete from WordbookWord ww where ww.wordbook.wordbookId = :wbId and ww.word.wordId = :wId")
+    void deleteByWordbookIdAndWordId(@Param("wbId") Long wordbookId, @Param("wId") Long wordId);
 }
