@@ -20,6 +20,7 @@ public class DevScrapController {
     private final FeedbackService feedbackService;
     private final UserRepository userRepository;
 
+    @Hidden
     @Operation(summary = "스크랩활동 테이블 > 단어 저장 로직 테스트용(백엔드용)")
     // 헤더로 user_id(pk) 받기
     @PostMapping("/scrap-activities")

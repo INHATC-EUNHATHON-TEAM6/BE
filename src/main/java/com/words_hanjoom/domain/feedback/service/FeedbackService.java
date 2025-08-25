@@ -18,7 +18,8 @@ import com.words_hanjoom.domain.feedback.repository.SpringDataJpaFeedbackReposit
 import com.words_hanjoom.domain.users.entity.User;
 import com.words_hanjoom.domain.users.repository.CategoryRepository;
 import com.words_hanjoom.domain.users.repository.UserRepository;
-import jakarta.transaction.Transactional;
+import com.words_hanjoom.domain.wordbooks.service.UnknownWordService;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.embedding.EmbeddingResponse;
@@ -42,6 +43,7 @@ public class FeedbackService {
     private final ObjectMapper objectMapper;
     private final OpenAiChatModel chatModel;
     private final OpenAiEmbeddingModel embeddingModel;
+    private final UnknownWordService unknownWordService;
 
     @Autowired
     public FeedbackService(UserRepository userRepository,
@@ -50,7 +52,8 @@ public class FeedbackService {
                            CategoryRepository categoryRepository,
                            ObjectMapper objectMapper,
                            OpenAiChatModel chatModel,
-                           OpenAiEmbeddingModel embeddingModel) {
+                           OpenAiEmbeddingModel embeddingModel,
+                           UnknownWordService unknownWordService) {
         this.userRepository = userRepository;
         this.articleRepository = articleRepository;
         this.feedbackRepository = feedbackRepository;
@@ -58,6 +61,7 @@ public class FeedbackService {
         this.objectMapper = objectMapper;
         this.chatModel = chatModel;
         this.embeddingModel = embeddingModel;
+        this.unknownWordService = unknownWordService;
     }
 
     public FeedbackListDto getUserActivitiesThisMonth(String loginId, int year, int month, int day) {
@@ -195,6 +199,22 @@ public class FeedbackService {
                 scrapActivities.setAiFeedback(feedback.getAiFeedback());
                 scrapActivities.setEvaluationScore(feedback.getEvaluationScore());
                 feedbackRepository.save(scrapActivities);
+            }
+
+            if (activity.getVocabularies() != null && !activity.getVocabularies().isEmpty()) {
+                unknownWordService.saveAllInNewTx(
+                        user.getUserId(),
+                        activity.getVocabularies(),
+                        null // 컨텍스트 끄기(바로 매핑)
+                );
+            } else {
+                feedbacks.stream()
+                        .filter(f -> f.getActivityType() == ActivityType.UNKNOWN_WORD)
+                        .map(FeedbackDto::getUserAnswer)
+                        .filter(s -> s != null && !s.isBlank())
+                        .forEach(raw -> unknownWordService.importUnknownWordsInNewTx(
+                                user.getUserId(), raw, null
+                        ));
             }
             return new FeedbacksDto(article.getContent(), category.getCategoryName(), feedbacks);
         } catch(JsonProcessingException e) {
