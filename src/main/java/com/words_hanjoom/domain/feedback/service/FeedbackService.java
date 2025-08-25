@@ -138,7 +138,7 @@ public class FeedbackService {
                             "content", article.getContent()
                     ),
                     Map.of(
-                            "keywords", String.join(",", activity.getKeywords()),
+                            "keywords", String.join(", ", activity.getKeywords()),
                             "title", activity.getTitle(),
                             "category", activity.getCategory(),
                             "summary", activity.getSummary()
